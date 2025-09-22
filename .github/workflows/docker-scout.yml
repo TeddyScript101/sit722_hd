@@ -1,0 +1,40 @@
+name: Backend CI - Docker Scout Demo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  docker_scout_demo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Step 1: Install Docker Scout CLI
+      - name: Install Docker Scout
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh | sh
+
+      # Step 2: Docker Hub Login (required for docker scout)
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Step 3: Build Product Service Image
+      - name: Build Product Service Image
+        run: docker build -t product_service:demo ./backend/product_service/
+
+      # Step 4: Scan Product Service with Docker Scout
+      - name: Scan Product Service Image
+        run: docker scout quickview product_service:demo
+
+      # Step 5: Build Order Service Image
+      - name: Build Order Service Image
+        run: docker build -t order_service:demo ./backend/order_service/
+
+      # Step 6: Scan Order Service with Docker Scout
+      - name: Scan Order Service Image
+        run: docker scout quickview order_service:demo

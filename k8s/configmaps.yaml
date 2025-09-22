@@ -1,0 +1,15 @@
+# hd/k8s/configmaps.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ecomm-config-hd
+data:
+  # Database Names
+  PRODUCTS_DB_NAME: products
+  ORDERS_DB_NAME: orders
+  AZURE_STORAGE_CONTAINER_NAME: product-images
+  AZURE_SAS_TOKEN_EXPIRY_HOURS: "24"
+
+  PRODUCT_SERVICE_URL: http://product-service-hd:8000
+  ORDER_SERVICE_URL: http://order-service-hd:8001

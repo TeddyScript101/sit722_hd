@@ -1,0 +1,56 @@
+name: Master - Full CI/CD Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      aks_cluster_name:
+        description: "Name of the AKS Cluster"
+        required: true
+        default: "aks-hd"
+      aks_resource_group:
+        description: "Resource Group of the AKS Cluster"
+        required: true
+        default: "hd-rg"
+      aks_acr_name:
+        description: "Name of ACR"
+        required: true
+        default: "teddysit722hd"
+
+  push:
+    branches:
+      - main
+
+jobs:
+  backend_ci:
+    uses: ./.github/workflows/backend_ci.yml
+    secrets: inherit
+    with:
+      IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+
+  frontend_ci:
+    needs: backend_ci
+    uses: ./.github/workflows/frontend_ci.yml
+    secrets: inherit
+    with:
+      IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+
+  deploy_backend:
+    needs: [backend_ci, frontend_ci]
+    uses: ./.github/workflows/backend-cd.yml
+    with:
+      aks_cluster_name: ${{ github.event.inputs.aks_cluster_name }}
+      aks_resource_group: ${{ github.event.inputs.aks_resource_group }}
+      aks_acr_name: ${{ github.event.inputs.aks_acr_name }}
+      IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+    secrets: inherit
+
+  deploy_frontend:
+    needs: deploy_backend
+    uses: ./.github/workflows/frontend-cd.yml
+    with:
+      product_api_ip: "http://${{ needs.deploy_backend.outputs.PRODUCT_API_IP }}:8000"
+      order_api_ip: "http://${{ needs.deploy_backend.outputs.ORDER_API_IP }}:8001"
+      aks_cluster_name: ${{ github.event.inputs.aks_cluster_name }}
+      aks_resource_group: ${{ github.event.inputs.aks_resource_group }}
+      IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+    secrets: inherit
