@@ -1,4 +1,4 @@
-name: Plugin - Create Traditional Pull Request
+name: Plugin - Create Pull Request
 
 on:
   workflow_dispatch:
