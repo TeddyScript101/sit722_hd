@@ -1,7 +1,7 @@
-name: Plugin - Create Pull Request
+name: Plugin - Create  Pull Request
 
 on:
-  workflow_dispatch: # allows manual trigger
+  workflow_dispatch:
     inputs:
       SOURCE_BRANCH:
         description: "From branch for PR"
@@ -12,52 +12,25 @@ on:
         required: true
         default: "main"
 
-  workflow_call: # allows it to be called by another workflow
-    inputs:
-      SOURCE_BRANCH:
-        required: true
-        type: string
-      TARGET_BRANCH:
-        required: true
-        type: string
-
 jobs:
   create-pr:
     runs-on: ubuntu-latest
-    env:
-      BRANCH_SOURCE: ${{ github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }}
-      BRANCH_TARGET: ${{ github.event.inputs.TARGET_BRANCH || github.inputs.TARGET_BRANCH }}
-
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
-        with:
-          ref: ${{ env.BRANCH_SOURCE }}
-          fetch-depth: 0
-          persist-credentials: true
 
-      - name: Configure Git
+      - name: Set up GitHub CLI
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          sudo apt-get update
+          sudo apt-get install -y gh
 
-      - name: Create Pull Request
-        id: pr
-        uses: peter-evans/create-pull-request@v5
-        with:
-          token: ${{ secrets.PAT_TOKEN }} # use PAT here
-          base: ${{ env.BRANCH_TARGET }}
-          branch: ${{ env.BRANCH_SOURCE }}
-          title: "Automated PR from ${{ env.BRANCH_SOURCE }}"
-          body: |
-            This Pull Request was automatically created by the CI pipeline.
-            It merges changes from `${{ env.BRANCH_SOURCE }}` into `${{ env.BRANCH_TARGET }}`.
-          draft: false
+      - name: Authenticate GitHub CLI
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
-      - name: Show PR result
+      - name: Create PR
         run: |
-          if [[ "${{ steps.pr.outputs.result }}" == "none" || "${{ steps.pr.outputs.result }}" == "" ]]; then
-            echo "No PR created because there are no changes."
-          else
-            echo "PR ${{ steps.pr.outputs.result }} successfully."
-          fi
+          gh pr create \
+            --base "${{ github.event.inputs.TARGET_BRANCH }}" \
+            --head "${{ github.event.inputs.SOURCE_BRANCH }}" \
+            --title "Automated PR: ${{ github.event.inputs.SOURCE_BRANCH }} → ${{ github.event.inputs.TARGET_BRANCH }}" \
+            --body "This PR was created by CI to merge changes from **${{ github.event.inputs.SOURCE_BRANCH }}** into **${{ github.event.inputs.TARGET_BRANCH }}**."
