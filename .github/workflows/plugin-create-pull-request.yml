@@ -1,10 +1,10 @@
-name: Plugin - Create Pull Request to Staging
+name: Plugin - Create Pull Request
 
 on:
-  workflow_dispatch: # allows manual trigger
+  workflow_dispatch:
     inputs:
       SOURCE_BRANCH:
-        description: "Branch to merge into staging"
+        description: "From"
         required: true
         default: "staging"
       TARGET_BRANCH:
@@ -12,7 +12,7 @@ on:
         required: true
         default: "main"
 
-  workflow_call: # allows it to be called by another workflow
+  workflow_call:
     inputs:
       SOURCE_BRANCH:
         required: true
@@ -32,8 +32,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.BRANCH_SOURCE }}
-          fetch-depth: 0 # fetch full history to avoid fetch errors
-          persist-credentials: true # ensure auth works for private repos
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Configure Git
         run: |
@@ -41,14 +41,23 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Create Pull Request
+        id: pr
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           base: ${{ env.BRANCH_TARGET }}
-          head: ${{ env.BRANCH_SOURCE }}
+          branch: ${{ env.BRANCH_SOURCE }}
           title: "Automated PR from ${{ env.BRANCH_SOURCE }}"
           body: |
             This Pull Request was automatically created by the CI pipeline.
             It merges changes from `${{ env.BRANCH_SOURCE }}` into `${{ env.BRANCH_TARGET }}`.
           draft: false
-          update-existing: true
+          update-branch: true
+
+      - name: Show PR result
+        run: |
+          if [[ "${{ steps.pr.outputs.result }}" == "none" ]]; then
+            echo "No PR created because there are no changes."
+          else
+            echo "PR ${ { steps.pr.outputs.result } } successfully."
+          fi
