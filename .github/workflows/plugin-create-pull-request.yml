@@ -12,18 +12,12 @@ on:
         required: true
         default: "main"
 
-  workflow_call:
-    inputs:
-      SOURCE_BRANCH:
-        required: true
-        type: string
-      TARGET_BRANCH:
-        required: true
-        type: string
-
 jobs:
   create-traditional-pr:
     runs-on: ubuntu-latest
+    env:
+      SOURCE_BRANCH: ${{ github.event.inputs.SOURCE_BRANCH }}
+      TARGET_BRANCH: ${{ github.event.inputs.TARGET_BRANCH }}
 
     steps:
       - name: Checkout repo
@@ -40,7 +34,7 @@ jobs:
       - name: Create PR
         run: |
           gh pr create \
-            --base "${{ github.event.inputs.TARGET_BRANCH || github.inputs.TARGET_BRANCH }}" \
-            --head "${{ github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }}" \
-            --title "Automated PR: ${ { github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }} → ${ { github.event.inputs.TARGET_BRANCH || github.inputs.TARGET_BRANCH }}" \
+            --base "$TARGET_BRANCH" \
+            --head "$SOURCE_BRANCH" \
+            --title "Automated PR: $SOURCE_BRANCH → $TARGET_BRANCH" \
             --body "This PR was created automatically by CI."
