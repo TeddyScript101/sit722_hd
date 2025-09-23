@@ -1,10 +1,10 @@
 name: Plugin - Create Pull Request
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # allows manual trigger
     inputs:
       SOURCE_BRANCH:
-        description: "From"
+        description: "From branch for PR"
         required: true
         default: "staging"
       TARGET_BRANCH:
@@ -12,7 +12,7 @@ on:
         required: true
         default: "main"
 
-  workflow_call:
+  workflow_call: # allows it to be called by another workflow
     inputs:
       SOURCE_BRANCH:
         required: true
@@ -27,6 +27,7 @@ jobs:
     env:
       BRANCH_SOURCE: ${{ github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }}
       BRANCH_TARGET: ${{ github.event.inputs.TARGET_BRANCH || github.inputs.TARGET_BRANCH }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -52,7 +53,6 @@ jobs:
             This Pull Request was automatically created by the CI pipeline.
             It merges changes from `${{ env.BRANCH_SOURCE }}` into `${{ env.BRANCH_TARGET }}`.
           draft: false
-          update-branch: true
 
       - name: Show PR result
         run: |
