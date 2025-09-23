@@ -43,15 +43,13 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: |
-          cd util
-          npm install nodemailer
+        run: npm install nodemailer
 
       - name: Send Email
-        run: node util/sendEmail.js
+        run: node scripts/send-email.js
         env:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-          EMAIL_TO: ${{ github.event.inputs.email_to || 'default@example.com' }}
-          EMAIL_SUBJECT: ${{ github.event.inputs.email_subject || 'GitHub Actions Notification' }}
-          EMAIL_BODY: ${{ github.event.inputs.email_body || 'This is an automated email.' }}
+          EMAIL_TO: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.email_to || inputs.email_to }}
+          EMAIL_SUBJECT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.email_subject || inputs.email_subject }}
+          EMAIL_BODY: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.email_body || inputs.email_body }}
