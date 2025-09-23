@@ -1,4 +1,4 @@
-name: Stage 3 - Production Deployment
+name: Stage3 - Production Deployment
 
 on:
   push:

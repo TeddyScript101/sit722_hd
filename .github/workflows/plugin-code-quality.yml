@@ -1,4 +1,4 @@
-name: Backend Code Quality
+name: Plugin - Backend Code Quality
 
 on:
   workflow_dispatch: # Manual trigger

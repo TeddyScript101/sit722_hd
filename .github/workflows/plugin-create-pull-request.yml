@@ -1,4 +1,4 @@
-name: Create Pull Request to Staging
+name: Plugin - Create Pull Request to Staging
 
 on:
   workflow_dispatch:

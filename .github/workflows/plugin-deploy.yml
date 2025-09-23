@@ -1,4 +1,4 @@
-name: Deploy to AKS
+name: Plugin - Deploy to AKS
 
 on:
   workflow_call:

@@ -1,4 +1,4 @@
-name: Send Email
+name: Plugin - Send Email
 
 # Trigger manually or via workflow_call
 on:

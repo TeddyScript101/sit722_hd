@@ -1,4 +1,4 @@
-name: Stage1- CI Pipeline - Staging Branch
+name: Stage1 - CI Pipeline - Staging Branch
 
 on:
   push:

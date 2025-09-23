@@ -1,8 +1,8 @@
-name: Monitoring Setup
+name: Stage4 - Monitoring Setup
 
 on:
   workflow_run:
-    workflows: ["Stage 3 - Production Deployment"]
+    workflows: ["Stage3 - Production Deployment"]
     types:
       - completed
 
