@@ -56,7 +56,7 @@ jobs:
 
       - name: Show PR result
         run: |
-          if [[ "${{ steps.pr.outputs.result }}" == "none" ]]; then
+          if [[ "${{ steps.pr.outputs.result }}" == "none" || "${{ steps.pr.outputs.result }}" == "" ]]; then
             echo "No PR created because there are no changes."
           else
             echo "PR ${{ steps.pr.outputs.result }} successfully."
