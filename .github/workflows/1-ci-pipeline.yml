@@ -1,6 +1,7 @@
 name: Stage1 - CI Pipeline - Staging Branch
 
 on:
+  workflow_dispatch:
   push:
     branches: [staging]
 

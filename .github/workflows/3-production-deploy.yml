@@ -1,6 +1,7 @@
 name: Stage3 - Production Deployment
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
