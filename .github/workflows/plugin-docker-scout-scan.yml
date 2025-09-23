@@ -1,8 +1,17 @@
 name: Plugin - Docker Scout Scan
 
 on:
-  workflow_dispatch: # Manual trigger
-  workflow_call: # Callable by other workflows
+  workflow_dispatch:
+    inputs:
+      IMAGE_NAME:
+        description: "Docker image name"
+        required: true
+        default: "my-image"
+      IMAGE_TAG:
+        description: "Docker image tag"
+        required: true
+        default: "latest"
+  workflow_call:
     inputs:
       IMAGE_NAME:
         required: true
