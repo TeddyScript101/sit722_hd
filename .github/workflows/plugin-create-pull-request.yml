@@ -24,11 +24,16 @@ on:
 jobs:
   create-pr:
     runs-on: ubuntu-latest
+    env:
+      BRANCH_SOURCE: ${{ github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }}
+      BRANCH_TARGET: ${{ github.event.inputs.TARGET_BRANCH || github.inputs.TARGET_BRANCH }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }}
+          ref: ${{ env.BRANCH_SOURCE }}
+          fetch-depth: 0 # fetch full history to avoid fetch errors
+          persist-credentials: true # ensure auth works for private repos
 
       - name: Configure Git
         run: |
@@ -39,11 +44,11 @@ jobs:
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          base: ${{ github.event.inputs.TARGET_BRANCH || github.inputs.TARGET_BRANCH }}
-          head: ${{ github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }}
-          title: "Automated PR from ${{ github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }}"
+          base: ${{ env.BRANCH_TARGET }}
+          head: ${{ env.BRANCH_SOURCE }}
+          title: "Automated PR from ${{ env.BRANCH_SOURCE }}"
           body: |
             This Pull Request was automatically created by the CI pipeline.
-            It merges changes from `${{ github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }}` into `${{ github.event.inputs.TARGET_BRANCH || github.inputs.TARGET_BRANCH }}`.
+            It merges changes from `${{ env.BRANCH_SOURCE }}` into `${{ env.BRANCH_TARGET }}`.
           draft: false
           update-existing: true
