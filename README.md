@@ -36,3 +36,5 @@ image: <YOUR_ACR_NAME>.azurecr.io/<image_name>:<image_tag>
 ### 2. Update Backend Pipeline (`.github/workflows/backend-cd.yml`) & Frontend Pipeline (`.github/workflows/frontend-cd.yml`)
 
 Ensure you replace all placeholders value to actual values.
+
+## new trigger
