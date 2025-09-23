@@ -50,25 +50,51 @@ jobs:
         run: |
           echo "Scanning image: ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}"
 
-          # Run basic CVE scan
-          docker scout cves ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
+          # Run basic CVE scan and save output
+          docker scout cves ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }} | tee scout-results.txt
 
           echo "✅ Docker Scout scan completed"
 
-      - name: Generate SARIF Report (Optional)
+      - name: Generate Summary Report
         run: |
-          # Only run if SARIF format is supported
-          if docker scout cves --help | grep -q "sarif"; then
-            echo "Generating SARIF report..."
-            docker scout cves ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }} --format sarif --output scout-report.sarif
-          else
-            echo "SARIF format not supported in this version"
-          fi
-        continue-on-error: true
+          echo "# 🔍 Docker Scout Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
-      - name: Upload SARIF Results
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: scout-report.sarif
-        continue-on-error: true
+          # Extract key information from scan results
+          if grep -q "No vulnerabilities found" scout-results.txt; then
+            echo "## ✅ Status: CLEAN" >> $GITHUB_STEP_SUMMARY
+            echo "No vulnerabilities detected in this image." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ⚠️ Status: VULNERABILITIES FOUND" >> $GITHUB_STEP_SUMMARY
+            
+            # Count vulnerabilities by severity
+            if grep -q "CRITICAL" scout-results.txt; then
+              CRITICAL_COUNT=$(grep -o "CRITICAL" scout-results.txt | wc -l)
+              echo "- 🔴 **Critical:** $CRITICAL_COUNT" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            if grep -q "HIGH" scout-results.txt; then
+              HIGH_COUNT=$(grep -o "HIGH" scout-results.txt | wc -l)
+              echo "- 🟠 **High:** $HIGH_COUNT" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            if grep -q "MEDIUM" scout-results.txt; then
+              MEDIUM_COUNT=$(grep -o "MEDIUM" scout-results.txt | wc -l)
+              echo "- 🟡 **Medium:** $MEDIUM_COUNT" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            if grep -q "LOW" scout-results.txt; then
+              LOW_COUNT=$(grep -o "LOW" scout-results.txt | wc -l)
+              echo "- 🔵 **Low:** $LOW_COUNT" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 Full Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat scout-results.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
