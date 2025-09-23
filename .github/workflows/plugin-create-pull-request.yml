@@ -1,4 +1,4 @@
-name: Plugin - Create  Pull Request
+name: Plugin - Create Pull Request
 
 on:
   workflow_dispatch:
@@ -11,6 +11,19 @@ on:
         description: "Target branch for PR"
         required: true
         default: "main"
+
+  workflow_call:
+    inputs:
+      SOURCE_BRANCH:
+        required: true
+        type: string
+      TARGET_BRANCH:
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   create-pr:
@@ -27,10 +40,24 @@ jobs:
       - name: Authenticate GitHub CLI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
+      - name: Determine source and target branches
+        id: vars
+        run: |
+          echo "SOURCE_BRANCH=${{ github.event.inputs.SOURCE_BRANCH || inputs.SOURCE_BRANCH }}" >> $GITHUB_ENV
+          echo "TARGET_BRANCH=${{ github.event.inputs.TARGET_BRANCH || inputs.TARGET_BRANCH }}" >> $GITHUB_ENV
+
+      - name: Check if branch has changes
+        run: |
+          git fetch origin $SOURCE_BRANCH $TARGET_BRANCH
+          if git diff --quiet origin/$TARGET_BRANCH..origin/$SOURCE_BRANCH; then
+            echo "⚠️ No changes between $SOURCE_BRANCH and $TARGET_BRANCH. Skipping PR."
+            exit 0
+          fi
+
       - name: Create PR
         run: |
           gh pr create \
-            --base "${{ github.event.inputs.TARGET_BRANCH }}" \
-            --head "${{ github.event.inputs.SOURCE_BRANCH }}" \
-            --title "Automated PR: ${{ github.event.inputs.SOURCE_BRANCH }} → ${{ github.event.inputs.TARGET_BRANCH }}" \
-            --body "This PR was created by CI to merge changes from **${{ github.event.inputs.SOURCE_BRANCH }}** into **${{ github.event.inputs.TARGET_BRANCH }}**."
+            --base "$TARGET_BRANCH" \
+            --head "$SOURCE_BRANCH" \
+            --title "Automated PR: $SOURCE_BRANCH → $TARGET_BRANCH" \
+            --body "This PR was created by CI to merge changes from **$SOURCE_BRANCH** into **$TARGET_BRANCH**."
