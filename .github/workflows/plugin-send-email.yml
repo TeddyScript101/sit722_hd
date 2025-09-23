@@ -50,7 +50,7 @@ jobs:
       - name: Send Email
         run: |
           cd util
-          node scripts/sendEmail.js
+          node sendEmail.js
         env:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
