@@ -2,12 +2,23 @@ name: Plugin - Docker Scout Scan
 
 on:
   workflow_dispatch:
+    inputs:
+      IMAGE_NAME:
+        description: "Docker image name"
+        required: true
+        default: "my-image"
+      IMAGE_TAG:
+        description: "Docker image tag"
+        required: true
+        default: "latest"
   workflow_call:
     inputs:
       IMAGE_NAME:
+        description: "Docker image name"
         required: true
         type: string
       IMAGE_TAG:
+        description: "Docker image tag"
         required: true
         type: string
 
@@ -28,5 +39,7 @@ jobs:
 
       - name: Scan Docker Image
         run: |
-          docker scout cves --format sarif --output scout-report.sarif.json ${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_TAG }}
+          echo "Scanning image: ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}"
+          docker scout cves ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }} --format sarif --output scout-report.sarif.json
+          docker scout cves ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
           echo "✅ Docker Scout scan completed"
