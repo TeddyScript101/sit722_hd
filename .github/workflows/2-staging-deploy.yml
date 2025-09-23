@@ -9,7 +9,7 @@ on:
 jobs:
   deploy:
     if: ${{ github.event.workflow_run.head_branch == 'staging' }}
-    uses: ./.github/workflows/plugin/deploy.yml
+    uses: ./.github/workflows/plugin-deploy.yml
     with:
       NAMESPACE: staging-${{ github.run_id }}
       IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}

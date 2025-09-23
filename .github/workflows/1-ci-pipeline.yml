@@ -111,7 +111,7 @@ jobs:
           docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
 
       - name: Scan Docker image with Docker Scout
-        uses: ./.github/workflows/plugin/docker-scout-scan.yml
+        uses: ./.github/workflows/plugin-docker-scout-scan.yml
         with:
           IMAGE_NAME: ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}
           IMAGE_TAG: ${{ github.sha }}

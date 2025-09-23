@@ -122,7 +122,7 @@ jobs:
     if: ${{ inputs.STAGING == false }}
     steps:
       - name: Send Production Deployment Email
-        uses: ./.github/workflows/plugin/send-email.yml
+        uses: ./.github/workflows/plugin-send-email.yml
         with:
           email_to: "ops-team@example.com"
           email_subject: ${{ needs.deploy.result == 'success' && 'Production Deployment Succeeded' || 'Production Deployment Failed' }}

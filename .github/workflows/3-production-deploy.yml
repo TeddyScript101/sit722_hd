@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    uses: ./.github/workflows/plugin/deploy.yml
+    uses: ./.github/workflows/plugin-deploy.yml
     with:
       NAMESPACE: production
       IMAGE_TAG: latest
