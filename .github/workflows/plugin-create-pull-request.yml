@@ -12,6 +12,10 @@ on:
         required: true
         default: "main"
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   create-traditional-pr:
     runs-on: ubuntu-latest
