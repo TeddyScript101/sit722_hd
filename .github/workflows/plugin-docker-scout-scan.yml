@@ -32,14 +32,43 @@ jobs:
 
       - name: Install Docker Scout CLI
         run: |
-          if ! docker scout version &>/dev/null; then
-            echo "Installing Docker Scout..."
-            curl -fsSL https://get.docker.com/scout/install.sh | sh
-          fi
+          # Install Docker Scout CLI
+          curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh | sh -s --
+          # Add to PATH
+          echo "$HOME/.docker/scout" >> $GITHUB_PATH
 
-      - name: Scan Docker Image
+      - name: Verify Docker Scout Installation
+        run: |
+          docker scout version
+
+      - name: Pull Docker Image
+        run: |
+          echo "Pulling image: ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}"
+          docker pull ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
+
+      - name: Scan Docker Image for CVEs
         run: |
           echo "Scanning image: ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}"
-          docker scout cves ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }} --format sarif --output scout-report.sarif.json
+
+          # Run basic CVE scan
           docker scout cves ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
+
           echo "✅ Docker Scout scan completed"
+
+      - name: Generate SARIF Report (Optional)
+        run: |
+          # Only run if SARIF format is supported
+          if docker scout cves --help | grep -q "sarif"; then
+            echo "Generating SARIF report..."
+            docker scout cves ${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }} --format sarif --output scout-report.sarif
+          else
+            echo "SARIF format not supported in this version"
+          fi
+        continue-on-error: true
+
+      - name: Upload SARIF Results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: scout-report.sarif
+        continue-on-error: true
