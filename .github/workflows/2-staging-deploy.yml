@@ -14,3 +14,11 @@ jobs:
       NAMESPACE: staging-${{ github.run_id }}
       IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
       STAGING: true
+
+  create-pr:
+    if: ${{ github.event.workflow_run.head_branch == 'staging' }}
+    needs: deploy
+    uses: ./.github/workflows/plugin-create-pull-request.yml
+    with:
+      SOURCE_BRANCH: staging
+      TARGET_BRANCH: main

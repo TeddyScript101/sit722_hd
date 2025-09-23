@@ -1,6 +1,5 @@
 name: Plugin - Send Email
 
-# Trigger manually or via workflow_call
 on:
   workflow_dispatch: # allows manual trigger
   workflow_call: # allows other workflows to call this

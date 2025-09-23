@@ -1,7 +1,8 @@
 name: Plugin - Docker Scout Scan
 
 on:
-  workflow_call:
+  workflow_dispatch: # Manual trigger
+  workflow_call: # Callable by other workflows
     inputs:
       IMAGE_NAME:
         required: true

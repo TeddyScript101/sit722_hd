@@ -1,7 +1,7 @@
 name: Plugin - Create Pull Request to Staging
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # allows manual trigger
     inputs:
       SOURCE_BRANCH:
         description: "Branch to merge into staging"
@@ -12,6 +12,15 @@ on:
         required: true
         default: "main"
 
+  workflow_call: # allows it to be called by another workflow
+    inputs:
+      SOURCE_BRANCH:
+        required: true
+        type: string
+      TARGET_BRANCH:
+        required: true
+        type: string
+
 jobs:
   create-pr:
     runs-on: ubuntu-latest
@@ -19,7 +28,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.SOURCE_BRANCH }}
+          ref: ${{ github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }}
 
       - name: Configure Git
         run: |
@@ -30,10 +39,11 @@ jobs:
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          base: ${{ github.event.inputs.TARGET_BRANCH }}
-          head: ${{ github.event.inputs.SOURCE_BRANCH }}
-          title: "Automated PR from ${{ github.event.inputs.SOURCE_BRANCH }}"
+          base: ${{ github.event.inputs.TARGET_BRANCH || github.inputs.TARGET_BRANCH }}
+          head: ${{ github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }}
+          title: "Automated PR from ${{ github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }}"
           body: |
             This Pull Request was automatically created by the CI pipeline.
-            It merges changes from `${{ github.event.inputs.SOURCE_BRANCH }}` into `${{ github.event.inputs.TARGET_BRANCH }}`.
+            It merges changes from `${{ github.event.inputs.SOURCE_BRANCH || github.inputs.SOURCE_BRANCH }}` into `${{ github.event.inputs.TARGET_BRANCH || github.inputs.TARGET_BRANCH }}`.
           draft: false
+          update-existing: true
