@@ -1,0 +1,16 @@
+{
+  "name": "util",
+  "version": "1.0.0",
+  "description": "",
+  "main": "integrationTest.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "axios": "^1.12.2",
+    "jest": "^30.1.3"
+  }
+}

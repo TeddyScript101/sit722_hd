@@ -1,0 +1,17 @@
+name: Stage 2 - Staging Deployment
+
+on:
+  workflow_run:
+    workflows: ["Stage1- CI Pipeline - Staging Branch"]
+    types:
+      - completed
+    branches:
+      - staging
+
+jobs:
+  call-deploy:
+    uses: ./.github/workflows/plugin/deploy.yml
+    with:
+      NAMESPACE: staging-${{ github.run_id }}
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+      STAGING: true

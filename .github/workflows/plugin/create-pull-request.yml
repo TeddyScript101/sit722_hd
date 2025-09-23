@@ -1,0 +1,39 @@
+name: Create Pull Request to Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      SOURCE_BRANCH:
+        description: "Branch to merge into staging"
+        required: true
+        default: "staging"
+      TARGET_BRANCH:
+        description: "Target branch for PR"
+        required: true
+        default: "main"
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.SOURCE_BRANCH }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: ${{ github.event.inputs.TARGET_BRANCH }}
+          head: ${{ github.event.inputs.SOURCE_BRANCH }}
+          title: "Automated PR from ${{ github.event.inputs.SOURCE_BRANCH }}"
+          body: |
+            This Pull Request was automatically created by the CI pipeline.
+            It merges changes from `${{ github.event.inputs.SOURCE_BRANCH }}` into `${{ github.event.inputs.TARGET_BRANCH }}`.
+          draft: false

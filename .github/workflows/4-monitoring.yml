@@ -1,0 +1,45 @@
+name: Monitoring Setup
+
+on:
+  workflow_run:
+    workflows: ["Stage 3 - Production Deployment"]
+    types:
+      - completed
+
+jobs:
+  deploy-monitoring:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    env:
+      RESOURCE_GROUP: teddysit722Week10
+      AKS_NAME: aksteddy722Week10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Connect to AKS
+        run: |
+          az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_NAME
+          kubectl cluster-info
+
+      - name: Deploy Prometheus
+        run: |
+          echo "📦 Deploying Prometheus..."
+          kubectl apply -f k8s/monitoring/prometheus/
+
+      - name: Deploy Grafana
+        run: |
+          echo "📦 Deploying Grafana..."
+          kubectl apply -f k8s/monitoring/grafana/
+
+      - name: Verify Monitoring Services
+        run: |
+          kubectl get pods -n monitoring
+          kubectl get svc -n monitoring

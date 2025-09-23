@@ -1,0 +1,43 @@
+name: Send Email
+
+# Trigger manually or via workflow_call
+on:
+  workflow_dispatch: # allows manual trigger
+  workflow_call: # allows other workflows to call this
+    inputs:
+      email_to:
+        description: "Recipient email"
+        required: true
+        type: string
+      email_subject:
+        description: "Email subject"
+        required: true
+        type: string
+      email_body:
+        description: "Email body"
+        required: true
+        type: string
+
+jobs:
+  send_email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install nodemailer
+
+      - name: Send Email
+        run: node scripts/send-email.js
+        env:
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_TO: ${{ github.event.inputs.email_to || 'default@example.com' }}
+          EMAIL_SUBJECT: ${{ github.event.inputs.email_subject || 'GitHub Actions Notification' }}
+          EMAIL_BODY: ${{ github.event.inputs.email_body || 'This is an automated email.' }}

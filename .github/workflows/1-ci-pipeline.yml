@@ -1,0 +1,154 @@
+name: Stage1- CI Pipeline - Staging Branch
+
+on:
+  push:
+    branches: [staging]
+
+jobs:
+  test-backend-services:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd="pg_isready -U postgres -d postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    strategy:
+      matrix:
+        service: [order_service, product_service]
+
+    env:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Wait for PostgreSQL to be ready
+        run: |
+          until pg_isready -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+
+      - name: Create databases if they don't exist
+        run: |
+          psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'orders'" | grep -q 1 || psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres -c "CREATE DATABASE orders;"
+          psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'products'" | grep -q 1 || psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres -c "CREATE DATABASE products;"
+
+      - name: Install dependencies for ${{ matrix.service }}
+        run: |
+          cd backend/${{ matrix.service }}
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Set DATABASE_URL for service
+        run: |
+          if [ "${{ matrix.service }}" = "order_service" ]; then
+            export DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/orders
+          elif [ "${{ matrix.service }}" = "product_service" ]; then
+            export DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/products
+          fi
+          echo "DATABASE_URL=$DATABASE_URL" >> $GITHUB_ENV
+
+      - name: Run tests for ${{ matrix.service }}
+        run: |
+          echo "🟢 Starting tests for ${{ matrix.service }}..."
+          cd backend/${{ matrix.service }}
+          python -m pytest tests/ -v
+          if [ $? -eq 0 ]; then
+            echo "✅ All tests passed for ${{ matrix.service }}"
+          else
+            echo "❌ Some tests failed for ${{ matrix.service }}"
+            exit 1
+          fi
+
+  build-and-scout:
+    needs: test-backend-services
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [order_service, product_service, frontend]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to Docker Hub
+        run: |
+          echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+
+      - name: Build Docker image for ${{ matrix.service }}
+        run: |
+          if [ "${{ matrix.service }}" = "frontend" ]; then
+            cd frontend
+          else
+            cd backend/${{ matrix.service }}
+          fi
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
+
+      - name: Scan Docker image with Docker Scout
+        uses: ./.github/workflows/plugin/docker-scout-scan.yml
+        with:
+          IMAGE_NAME: ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}
+          IMAGE_TAG: ${{ github.sha }}
+
+  push-to-acr:
+    needs: build-and-scout
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [order_service, product_service, frontend]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to ACR
+        run: |
+          echo ${{ secrets.ACR_PASSWORD }} | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+
+      - name: Push Docker image to ACR
+        run: |
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }}
+          docker tag ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:latest
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:latest
+          echo "✅ Built, scanned, and pushed ${{ matrix.service }} with tags: ${{ github.sha }} and latest"
+
+  notify-email:
+    needs: push-to-acr
+    if: ${{ needs.push-to-acr.result != 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Email Notification
+        uses: ./.github/workflows/send-email.yml
+        with:
+          email_to: "teddyhiny@gmail.com"
+          email_subject: "CI Pipeline Failed on Staging Branch"
+          email_body: |
+            CI Pipeline for branch staging has failed.
+            Commit: ${{ github.sha }}
+            Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

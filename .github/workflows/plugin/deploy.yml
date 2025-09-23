@@ -1,0 +1,133 @@
+name: Deploy to AKS
+
+on:
+  workflow_call:
+    inputs:
+      NAMESPACE:
+        required: true
+        type: string
+      IMAGE_TAG:
+        required: true
+        type: string
+      STAGING:
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      RESOURCE_GROUP: teddysit722Week10
+      AKS_NAME: aksteddy722Week10
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Connect to AKS
+        run: az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_NAME
+
+      - name: Create Namespace
+        run: kubectl create namespace ${{ inputs.NAMESPACE }} || echo "Namespace exists"
+
+      - name: Deploy Backend Services
+        run: |
+          for service in order_service product_service; do
+            K8S_NAME=$(echo $service | sed 's/_/-/g')
+            kubectl create deployment $K8S_NAME \
+              --image=$ACR_LOGIN_SERVER/$service:${{ inputs.IMAGE_TAG }} \
+              -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+            kubectl expose deployment $K8S_NAME \
+              --type=LoadBalancer \
+              --port=80 --target-port=80 --name=${K8S_NAME}-service \
+              -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+            kubectl label deployment $K8S_NAME app=$K8S_NAME -n ${{ inputs.NAMESPACE }} --overwrite
+            kubectl set image deployment/$K8S_NAME *=$ACR_LOGIN_SERVER/$service:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
+          done
+
+      - name: Wait for Backend Deployments
+        run: |
+          DEPLOYMENTS=$(kubectl get deployments -n ${{ inputs.NAMESPACE }} -o jsonpath='{.items[*].metadata.name}')
+          for dep in $DEPLOYMENTS; do
+            kubectl rollout status deployment/$dep -n ${{ inputs.NAMESPACE }} --timeout=300s
+          done
+          # Wait until LoadBalancer external IPs are ready
+          for svc in product-service order-service; do
+            while [ -z "$(kubectl get svc $svc -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')" ]; do
+              echo "Waiting for external IP for $svc..."
+              sleep 5
+            done
+          done
+
+      - name: Get Backend External IPs
+        run: |
+          PRODUCT_API_IP=$(kubectl get svc product-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          ORDER_API_IP=$(kubectl get svc order-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          echo "PRODUCT_API=$PRODUCT_API_IP" >> $GITHUB_ENV
+          echo "ORDER_API=$ORDER_API_IP" >> $GITHUB_ENV
+
+      - name: Inject Backend IPs into Frontend main.js
+        run: |
+          sed -i "s|_PRODUCT_API_URL_|http://$PRODUCT_API:80|g" frontend/main.js
+          sed -i "s|_ORDER_API_URL_|http://$ORDER_API:80|g" frontend/main.js
+
+      - name: Build and Push Frontend Image
+        run: |
+          docker build -t $ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} frontend/
+          echo ${{ secrets.ACR_PASSWORD }} | docker login $ACR_LOGIN_SERVER -u ${{ secrets.ACR_USERNAME }} --password-stdin
+          docker push $ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }}
+
+      - name: Deploy Frontend
+        run: |
+          kubectl create deployment frontend --image=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl expose deployment frontend --port=80 --target-port=80 --name=frontend-service -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl set image deployment/frontend *=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
+          kubectl label deployment frontend app=frontend -n ${{ inputs.NAMESPACE }} --overwrite
+
+      - name: Wait for Frontend Deployment
+        run: kubectl rollout status deployment/frontend -n ${{ inputs.NAMESPACE }} --timeout=300s
+
+  post-deploy-integration-tests:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          cd util
+          npm ci
+
+      - name: Run API integration tests
+        run: |
+          cd util
+          npx jest integrationTest.js --runInBand --testTimeout=30000
+
+  notify-email:
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: ${{ inputs.STAGING == false }}
+    steps:
+      - name: Send Production Deployment Email
+        uses: ./.github/workflows/plugin/send-email.yml
+        with:
+          email_to: "ops-team@example.com"
+          email_subject: ${{ needs.deploy.result == 'success' && 'Production Deployment Succeeded' || 'Production Deployment Failed' }}
+          email_body: |
+            Production deployment to namespace ${{ inputs.NAMESPACE }} has completed.
+            Status: ${{ needs.deploy.result }}
+            Image Tag: ${{ inputs.IMAGE_TAG }}
+            Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

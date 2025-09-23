@@ -1,0 +1,41 @@
+name: Backend Code Quality
+
+on:
+  workflow_dispatch: # Manual trigger
+    inputs:
+      service:
+        description: "Name of the backend service to scan (order_service or product_service)"
+        required: true
+        default: "order_service"
+
+  workflow_call: # Callable by other workflows
+    inputs:
+      service:
+        description: "Name of the backend service to scan"
+        required: true
+        type: string
+
+jobs:
+  lint-and-security:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # Dynamic working directory based on input service
+        working-directory: ./backend/${{ github.event.inputs.service || inputs.service }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt flake8 bandit
+
+      - name: Lint code with Flake8
+        run: flake8 ./app ./tests
+
+      - name: Security scan with Bandit
+        run: bandit -r ./app

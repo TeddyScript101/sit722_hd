@@ -1,0 +1,32 @@
+name: Docker Scout Scan
+
+on:
+  workflow_call:
+    inputs:
+      IMAGE_NAME:
+        required: true
+        type: string
+      IMAGE_TAG:
+        required: true
+        type: string
+
+jobs:
+  scout-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to Docker Hub
+        run: |
+          echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+
+      - name: Install Docker Scout CLI
+        run: |
+          if ! docker scout version &>/dev/null; then
+            echo "Installing Docker Scout..."
+            docker scout --version || true
+          fi
+
+      - name: Scan Docker Image
+        run: |
+          docker scout cves ${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_TAG }} --json > scout-report.json
+          docker scout cves ${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_TAG }}
+          echo "✅ Docker Scout scan completed"
