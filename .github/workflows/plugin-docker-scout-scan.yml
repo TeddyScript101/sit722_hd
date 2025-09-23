@@ -2,15 +2,6 @@ name: Plugin - Docker Scout Scan
 
 on:
   workflow_dispatch:
-    inputs:
-      IMAGE_NAME:
-        description: "Docker image name"
-        required: true
-        default: "my-image"
-      IMAGE_TAG:
-        description: "Docker image tag"
-        required: true
-        default: "latest"
   workflow_call:
     inputs:
       IMAGE_NAME:
@@ -32,11 +23,10 @@ jobs:
         run: |
           if ! docker scout version &>/dev/null; then
             echo "Installing Docker Scout..."
-            docker scout --version || true
+            curl -fsSL https://get.docker.com/scout/install.sh | sh
           fi
 
       - name: Scan Docker Image
         run: |
-          docker scout cves ${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_TAG }} --json > scout-report.json
-          docker scout cves ${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_TAG }}
+          docker scout cves --format sarif --output scout-report.sarif.json ${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_TAG }}
           echo "✅ Docker Scout scan completed"
