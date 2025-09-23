@@ -45,7 +45,7 @@ jobs:
         id: pr
         uses: peter-evans/create-pull-request@v5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN }} # use PAT here
           base: ${{ env.BRANCH_TARGET }}
           branch: ${{ env.BRANCH_SOURCE }}
           title: "Automated PR from ${{ env.BRANCH_SOURCE }}"
