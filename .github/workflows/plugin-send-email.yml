@@ -43,10 +43,12 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm install nodemailer
+        run: |
+          cd util
+          npm install nodemailer
 
       - name: Send Email
-        run: node scripts/send-email.js
+        run: node util/send-email.js
         env:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
