@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  call-deploy:
+  deploy:
     uses: ./.github/workflows/plugin/deploy.yml
     with:
       NAMESPACE: production

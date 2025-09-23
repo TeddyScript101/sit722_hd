@@ -5,11 +5,10 @@ on:
     workflows: ["Stage1- CI Pipeline - Staging Branch"]
     types:
       - completed
-    branches:
-      - staging
 
 jobs:
-  call-deploy:
+  deploy:
+    if: ${{ github.event.workflow_run.head_branch == 'staging' }}
     uses: ./.github/workflows/plugin/deploy.yml
     with:
       NAMESPACE: staging-${{ github.run_id }}
