@@ -48,7 +48,7 @@ jobs:
           npm install nodemailer
 
       - name: Send Email
-        run: node util/send-email.js
+        run: node util/sendEmail.js
         env:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
