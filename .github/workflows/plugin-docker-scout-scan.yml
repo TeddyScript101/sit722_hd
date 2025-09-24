@@ -32,11 +32,11 @@ on:
         description: "ACR password"
         required: true
       DOCKERHUB_USERNAME:
-        description: "Docker Hub username"
-        required: false
+        description: "Docker Hub username (required for Docker Scout)"
+        required: true
       DOCKERHUB_PASSWORD:
-        description: "Docker Hub password"
-        required: false
+        description: "Docker Hub password (required for Docker Scout)"
+        required: true
 
 jobs:
   scout-scan:
@@ -45,8 +45,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Login to Docker Hub (for Docker Scout)
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PASSWORD != '' }}
+      - name: Login to Docker Hub (required for Docker Scout)
         run: |
           echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
 
