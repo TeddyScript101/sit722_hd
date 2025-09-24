@@ -30,6 +30,7 @@ jobs:
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true
 
       - name: Connect to AKS
         run: az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_NAME
