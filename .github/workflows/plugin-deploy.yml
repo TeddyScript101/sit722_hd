@@ -55,7 +55,7 @@ jobs:
               -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
             kubectl expose deployment $K8S_NAME \
               --type=LoadBalancer \
-              --port=80 --target-port=80 --name=${K8S_NAME}-service \
+              --port=80 --target-port=80 --name=$K8S_NAME \
               -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
             kubectl label deployment $K8S_NAME app=$K8S_NAME -n ${{ inputs.NAMESPACE }} --overwrite
             kubectl set image deployment/$K8S_NAME *=$ACR_LOGIN_SERVER/$service:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
@@ -96,7 +96,7 @@ jobs:
       - name: Deploy Frontend
         run: |
           kubectl create deployment frontend --image=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl expose deployment frontend --port=80 --target-port=80 --name=frontend-service -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl expose deployment frontend --port=80 --target-port=80 --name=frontend -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl set image deployment/frontend *=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
           kubectl label deployment frontend app=frontend -n ${{ inputs.NAMESPACE }} --overwrite
 
