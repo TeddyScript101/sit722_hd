@@ -5,6 +5,9 @@ on:
   push:
     branches: [staging]
 
+env:
+  ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+
 jobs:
   # ---------------------------------------
   # 1️⃣ Test Backend Services
@@ -111,7 +114,7 @@ jobs:
           else
             cd backend/${{ matrix.service }}
           fi
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
+          docker build -t ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
 
   # ---------------------------------------
   # 3️⃣ Scan Docker Images (Reusable Workflow)
@@ -123,8 +126,12 @@ jobs:
       matrix:
         service: [order_service, product_service, frontend]
     with:
-      IMAGE_NAME: ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}
+      IMAGE_NAME: ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.service }}
       IMAGE_TAG: ${{ github.sha }}
+    secrets:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
 
   # ---------------------------------------
   # 4️⃣ Push Docker Images to ACR
@@ -142,13 +149,13 @@ jobs:
 
       - name: Login to ACR
         run: |
-          echo ${{ secrets.ACR_PASSWORD }} | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+          echo ${{ secrets.ACR_PASSWORD }} | docker login ${{ env.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
       - name: Push Docker image
         run: |
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }}
-          docker tag ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:latest
-          docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:latest
+          docker push ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }}
+          docker tag ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.service }}:latest
+          docker push ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.service }}:latest
 
   # ---------------------------------------
   # 5️⃣ Notify via Email on Failure
