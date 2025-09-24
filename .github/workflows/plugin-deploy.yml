@@ -213,3 +213,6 @@ jobs:
             Status: ${{ needs.deploy.result }}
             Image Tag: ${{ inputs.IMAGE_TAG }}
             Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        secrets:
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
