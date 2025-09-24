@@ -172,16 +172,16 @@ jobs:
           cd util
           npm test --testTimeout=30000 || true
 
-  - name: Cleanup Port-Forwards and Namespace
-    if: ${{ always() }}
-    run: |
-          echo "🧹 Cleaning up port-forwards..."
-          pkill -f "kubectl port-forward" || true
+      # - name: Cleanup Port-Forwards and Namespace
+      #   if: ${{ always() }}
+      #   run: |
+      #     echo "🧹 Cleaning up port-forwards..."
+      #     pkill -f "kubectl port-forward" || true
 
-          if [ "${{ inputs.STAGING }}" = "true" ]; then
-            echo "🗑️ Deleting namespace..."
-            kubectl delete namespace ${{ inputs.NAMESPACE }} || echo "Namespace already deleted"
-          fi
+      #     if [ "${{ inputs.STAGING }}" = "true" ]; then
+      #       echo "🗑️ Deleting namespace..."
+      #       kubectl delete namespace ${{ inputs.NAMESPACE }} || echo "Namespace already deleted"
+      #     fi
 
   notify-email:
     needs: post-deploy-integration-tests
