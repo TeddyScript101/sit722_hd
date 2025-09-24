@@ -111,9 +111,21 @@ jobs:
   post-deploy-integration-tests:
     needs: deploy
     runs-on: ubuntu-latest
+    env:
+      RESOURCE_GROUP: sit722devopsteddy-rg
+      AKS_NAME: sit722devopsteddy-aks
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # Add Azure login and AKS connection for this job
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Connect to AKS
+        run: az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_NAME
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -129,8 +141,14 @@ jobs:
         run: |
           echo "🔗 Setting up port forwarding for integration tests..."
 
+          # Start port forwarding in background
           for service in product-service order-service frontend; do
             POD=$(kubectl get pod -n ${{ inputs.NAMESPACE }} -l app=$service -o jsonpath="{.items[0].metadata.name}")
+            if [ -z "$POD" ]; then
+              echo "❌ No pod found for service $service"
+              continue
+            fi
+            
             PORT=""
             LOCAL_PORT=""
             case $service in
@@ -138,14 +156,30 @@ jobs:
               order-service) LOCAL_PORT=8001; PORT=80 ;;
               frontend) LOCAL_PORT=8080; PORT=80 ;;
             esac
+            
+            echo "🚀 Starting port-forward for $service: $POD on $LOCAL_PORT:$PORT"
             kubectl port-forward pod/$POD $LOCAL_PORT:$PORT -n ${{ inputs.NAMESPACE }} &
-            echo "$service port-forward started at localhost:$LOCAL_PORT"
+            
+            # Store the PID for cleanup
+            PID=$!
+            echo "PORT_FORWARD_PID_$service=$PID" >> $GITHUB_ENV
           done
 
-          # Wait a bit for port-forwards to establish
-          sleep 15
+          # Wait for port-forwards to establish
+          echo "⏳ Waiting for port-forwards to establish..."
+          sleep 20
 
-          # Set environment variables
+          # Verify connections
+          echo "🔍 Verifying port-forward connections..."
+          for port in 8000 8001 8080; do
+            if nc -z localhost $port 2>/dev/null; then
+              echo "✅ Port $port is accessible"
+            else
+              echo "❌ Port $port is not accessible"
+            fi
+          done
+
+          # Set environment variables for tests
           export PRODUCT_API_IP="http://localhost:8000"
           export ORDER_API_IP="http://localhost:8001"
           export FRONTEND_URL="http://localhost:8080"
@@ -154,11 +188,14 @@ jobs:
           cd util
           npm test --testTimeout=30000 || true
 
-        # Always cleanup port-forwards and namespace
+      # Always cleanup port-forwards and namespace
       - name: Cleanup Port-Forwarding and Namespace
         if: ${{ always() }}
         run: |
+          echo "🧹 Cleaning up port-forwards..."
           pkill -f "kubectl port-forward" || true
+
+          echo "🗑️ Deleting namespace..."
           kubectl delete namespace ${{ inputs.NAMESPACE }} || echo "Namespace already deleted"
 
   notify-email:
@@ -169,7 +206,7 @@ jobs:
       - name: Send Production Deployment Email
         uses: ./.github/workflows/plugin-send-email.yml
         with:
-          email_to: "ops-team@example.com"
+          email_to: "teddyhinyp@gmail.com"
           email_subject: ${{ needs.deploy.result == 'success' && 'Production Deployment Succeeded' || 'Production Deployment Failed' }}
           email_body: |
             Production deployment to namespace ${{ inputs.NAMESPACE }} has completed.
