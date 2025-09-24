@@ -82,89 +82,10 @@ jobs:
           python -m pytest tests/ -v
 
   # ---------------------------------------
-  # 2️⃣ Build Docker Images
+  # 2️⃣ Build and Push Docker Images to ACR
   # ---------------------------------------
-  build-docker-images:
+  build-and-push-docker-images:
     needs: test-backend-services
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [order_service, product_service, frontend]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Login to Docker Hub
-        run: |
-          echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
-
-      - name: Build Docker image
-        run: |
-          if [ "${{ matrix.service }}" = "frontend" ]; then
-            cd frontend
-          else
-            cd backend/${{ matrix.service }}
-          fi
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
-
-  # ---------------------------------------
-  # 3️⃣ Scan Docker Images - Order Service
-  # ---------------------------------------
-  docker-scout-scan-order:
-    needs: build-docker-images
-    uses: ./.github/workflows/plugin-docker-scout-scan.yml
-    with:
-      IMAGE_NAME: order_service
-      IMAGE_TAG: ${{ github.sha }}
-    secrets:
-      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
-
-  # ---------------------------------------
-  # 3️⃣ Scan Docker Images - Product Service
-  # ---------------------------------------
-  docker-scout-scan-product:
-    needs: build-docker-images
-    uses: ./.github/workflows/plugin-docker-scout-scan.yml
-    with:
-      IMAGE_NAME: product_service
-      IMAGE_TAG: ${{ github.sha }}
-    secrets:
-      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
-
-  # ---------------------------------------
-  # 3️⃣ Scan Docker Images - Frontend
-  # ---------------------------------------
-  docker-scout-scan-frontend:
-    needs: build-docker-images
-    uses: ./.github/workflows/plugin-docker-scout-scan.yml
-    with:
-      IMAGE_NAME: frontend
-      IMAGE_TAG: ${{ github.sha }}
-    secrets:
-      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
-
-  # ---------------------------------------
-  # 4️⃣ Push Docker Images to ACR
-  # ---------------------------------------
-  push-to-acr:
-    needs:
-      [
-        docker-scout-scan-order,
-        docker-scout-scan-product,
-        docker-scout-scan-frontend,
-      ]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -178,6 +99,15 @@ jobs:
         run: |
           echo ${{ secrets.ACR_PASSWORD }} | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
+      - name: Build Docker image
+        run: |
+          if [ "${{ matrix.service }}" = "frontend" ]; then
+            cd frontend
+          else
+            cd backend/${{ matrix.service }}
+          fi
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
+
       - name: Push Docker image
         run: |
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }}
@@ -185,22 +115,66 @@ jobs:
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:latest
 
   # ---------------------------------------
-  # 5️⃣ Notify via Email on Failure
+  # 3️⃣ Scan Docker Images - Order Service
+  # ---------------------------------------
+  docker-scout-scan-order:
+    needs: build-and-push-docker-images
+    uses: ./.github/workflows/plugin-docker-scout-scan.yml
+    with:
+      IMAGE_NAME: order_service
+      IMAGE_TAG: ${{ github.sha }}
+    secrets:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  # ---------------------------------------
+  # 3️⃣ Scan Docker Images - Product Service
+  # ---------------------------------------
+  docker-scout-scan-product:
+    needs: build-and-push-docker-images
+    uses: ./.github/workflows/plugin-docker-scout-scan.yml
+    with:
+      IMAGE_NAME: product_service
+      IMAGE_TAG: ${{ github.sha }}
+    secrets:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  # ---------------------------------------
+  # 3️⃣ Scan Docker Images - Frontend
+  # ---------------------------------------
+  docker-scout-scan-frontend:
+    needs: build-and-push-docker-images
+    uses: ./.github/workflows/plugin-docker-scout-scan.yml
+    with:
+      IMAGE_NAME: frontend
+      IMAGE_TAG: ${{ github.sha }}
+    secrets:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  # ---------------------------------------
+  # 4️⃣ Notify via Email on Failure
   # ---------------------------------------
   notify-email:
-    needs: push-to-acr
+    needs:
+      [
+        docker-scout-scan-order,
+        docker-scout-scan-product,
+        docker-scout-scan-frontend,
+      ]
     if: ${{ failure() }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Trigger Email Notification
-        uses: ./.github/workflows/send-email.yml
-        with:
-          email_to: "teddyhiny@gmail.com"
-          email_subject: "CI Pipeline Failed on Staging Branch"
-          email_body: |
-            CI Pipeline for branch staging has failed.
-            Commit: ${{ github.sha }}
-            Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    uses: ./.github/workflows/plugin-send-email.yml
+    with:
+      email_to: "teddyhiny@gmail.com"
+      email_subject: "CI Pipeline Failed on Staging Branch"
+      email_body: |
+        CI Pipeline for branch staging has failed.
+        Commit: ${{ github.sha }}
+        Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    secrets:
+      EMAIL_USER: ${{ secrets.EMAIL_USER }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}

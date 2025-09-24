@@ -36,9 +36,9 @@ jobs:
   scout-scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Login to Docker Hub
+      - name: Login to ACR
         run: |
-          echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+          echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
 
       - name: Install Docker Scout CLI
         run: |

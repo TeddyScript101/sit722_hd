@@ -29,16 +29,23 @@ on:
         description: "Email body"
         required: true
         type: string
+    secrets:
+      EMAIL_USER:
+        description: "Email user for authentication"
+        required: true
+      EMAIL_PASSWORD:
+        description: "Email password for authentication"
+        required: true
 
 jobs:
   send_email:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
