@@ -217,17 +217,32 @@ jobs:
             echo "✅ Skipping cleanup for production success."
           fi
 
-  notify-email:
-    needs: post-deploy-integration-tests
-    uses: ./.github/workflows/plugin-send-email.yml
-    with:
-      email_to: "teddyhinyp@gmail.com"
-      email_subject: ${{ needs.deploy.result == 'success' && 'Production Deployment Succeeded' || 'Production Deployment Failed' }}
-      email_body: |
-        Deployment to namespace ${{ github.event.inputs.NAMESPACE }} has completed.
-        Status: ${{ needs.deploy.result }}
-        Image Tag: ${{ github.event.inputs.IMAGE_TAG }}
-        Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-    secrets:
-      EMAIL_USER: ${{ secrets.EMAIL_USER }}
-      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+    # notify-email:
+    #   needs: post-deploy-integration-tests
+    #   uses: ./.github/workflows/plugin-send-email.yml
+    #   with:
+    #     email_to: "teddyhinyp@gmail.com"
+    #     email_subject: ${{ needs.deploy.result == 'success' && 'Production Deployment Succeeded' || 'Production Deployment Failed' }}
+    #     email_body: |
+    #       Deployment to namespace ${{ github.event.inputs.NAMESPACE }} has completed.
+    #       Status: ${{ needs.deploy.result }}
+    #       Image Tag: ${{ github.event.inputs.IMAGE_TAG }}
+    #       Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    #   secrets:
+    #     EMAIL_USER: ${{ secrets.EMAIL_USER }}
+    #     EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+
+    notify-email:
+      needs: post-deploy-integration-tests
+      uses: ./.github/workflows/plugin-send-email.yml
+      with:
+        email_to: "teddyhinyp@gmail.com"
+        email_subject: ${{ needs.deploy.result == 'success' && 'Production Deployment Succeeded' || 'Production Deployment Failed' }}
+        email_body: |
+          Deployment to namespace ${{ inputs.NAMESPACE }} has completed.
+          Status: ${{ needs.deploy.result }}
+          Image Tag: ${{ inputs.IMAGE_TAG }}
+          Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      secrets:
+        EMAIL_USER: ${{ secrets.EMAIL_USER }}
+        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
