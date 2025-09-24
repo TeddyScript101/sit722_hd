@@ -114,7 +114,7 @@ jobs:
       - name: Run API integration tests
         run: |
           cd util
-          npx jest integrationTest.js --runInBand --testTimeout=30000
+          npm test --testTimeout=30000
 
   notify-email:
     needs: deploy
