@@ -16,16 +16,12 @@ on:
     secrets:
       AZURE_CREDENTIALS:
         required: true
-        type: string
       ACR_USERNAME:
         required: true
-        type: string
       ACR_PASSWORD:
         required: true
-        type: string
       ACR_LOGIN_SERVER:
         required: true
-        type: string
 
 jobs:
   deploy:
