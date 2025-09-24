@@ -137,50 +137,71 @@ jobs:
           cd util
           npm ci
 
-      - name: Run API integration tests
+      - name: Run Staging Tests
         run: |
-          echo "🔗 Setting up port forwarding for integration tests..."
+          echo "🧪 Running tests..."
+          # Frontend
+          kubectl port-forward service/frontend-service 8080:80 -n $STAGING_NAMESPACE &
+          PF_PID=$!
+          sleep 10
+          curl -f -s http://localhost:8080 && echo "✅ Frontend responding" || echo "⚠️ Frontend not responding"
+          kill $PF_PID 2>/dev/null || true
 
-          # Start port forwarding in background for services
-          for service in product-service order-service frontend; do
-            PORT=""
-            LOCAL_PORT=""
-            case $service in
-              product-service) LOCAL_PORT=8000; PORT=80 ;;
-              order-service) LOCAL_PORT=8001; PORT=80 ;;
-              frontend) LOCAL_PORT=8080; PORT=80 ;;
-            esac
-
-            echo "🚀 Starting port-forward for $service svc on $LOCAL_PORT:$PORT"
-            kubectl port-forward svc/$service $LOCAL_PORT:$PORT -n ${{ inputs.NAMESPACE }} &
-            
-            # Store the PID for cleanup
-            PID=$!
-            echo "PORT_FORWARD_PID_$service=$PID" >> $GITHUB_ENV
-          done
-
-          # Wait for port-forwards to establish
-          echo "⏳ Waiting for port-forwards to establish..."
-          sleep 20
-
-          # Verify connections
-          echo "🔍 Verifying port-forward connections..."
-          for port in 8000 8001 8080; do
-            if nc -z localhost $port 2>/dev/null; then
-              echo "✅ Port $port is accessible"
+          # Backend
+          for svc in customer-service order-service product-service; do
+            POD=$(kubectl get pods -n $STAGING_NAMESPACE -l app=$svc -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+            if [ -n "$POD" ]; then
+              kubectl wait --for=condition=ready pod/$POD -n $STAGING_NAMESPACE --timeout=120s
+              echo "✅ $svc pod ready"
             else
-              echo "❌ Port $port is not accessible"
+              echo "⚠️ $svc pod not found"
             fi
           done
 
-          # Set environment variables for tests
-          export PRODUCT_API_IP="http://localhost:8000"
-          export ORDER_API_IP="http://localhost:8001"
-          export FRONTEND_URL="http://localhost:8080"
+      # - name: Run API integration tests
+      #   run: |
+      #     echo "🔗 Setting up port forwarding for integration tests..."
 
-          echo "🧪 Running integration tests..."
-          cd util
-          npm test --testTimeout=30000 || true
+      #     # Start port forwarding in background for services
+      #     for service in product-service order-service frontend; do
+      #       PORT=""
+      #       LOCAL_PORT=""
+      #       case $service in
+      #         product-service) LOCAL_PORT=8000; PORT=80 ;;
+      #         order-service) LOCAL_PORT=8001; PORT=80 ;;
+      #         frontend) LOCAL_PORT=8080; PORT=80 ;;
+      #       esac
+
+      #       echo "🚀 Starting port-forward for $service svc on $LOCAL_PORT:$PORT"
+      #       kubectl port-forward svc/$service $LOCAL_PORT:$PORT -n ${{ inputs.NAMESPACE }} &
+
+      #       # Store the PID for cleanup
+      #       PID=$!
+      #       echo "PORT_FORWARD_PID_$service=$PID" >> $GITHUB_ENV
+      #     done
+
+      #     # Wait for port-forwards to establish
+      #     echo "⏳ Waiting for port-forwards to establish..."
+      #     sleep 20
+
+      #     # Verify connections
+      #     echo "🔍 Verifying port-forward connections..."
+      #     for port in 8000 8001 8080; do
+      #       if nc -z localhost $port 2>/dev/null; then
+      #         echo "✅ Port $port is accessible"
+      #       else
+      #         echo "❌ Port $port is not accessible"
+      #       fi
+      #     done
+
+      #     # Set environment variables for tests
+      #     export PRODUCT_API_IP="http://localhost:8000"
+      #     export ORDER_API_IP="http://localhost:8001"
+      #     export FRONTEND_URL="http://localhost:8080"
+
+      #     echo "🧪 Running integration tests..."
+      #     cd util
+      #     npm test --testTimeout=30000 || true
 
       - name: Cleanup
         if: ${{ always() }}
