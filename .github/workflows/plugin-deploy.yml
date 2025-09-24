@@ -53,8 +53,14 @@ jobs:
             kubectl create deployment $K8S_NAME \
               --image=$ACR_LOGIN_SERVER/$service:${{ inputs.IMAGE_TAG }} \
               -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+            # Use ClusterIP for testing, LoadBalancer for production
+            if [ "${{ inputs.STAGING }}" = "false" ]; then
+              TYPE=LoadBalancer
+            else
+              TYPE=ClusterIP
+            fi
             kubectl expose deployment $K8S_NAME \
-              --type=LoadBalancer \
+              --type=$TYPE \
               --port=80 --target-port=80 --name=$K8S_NAME \
               -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
             kubectl label deployment $K8S_NAME app=$K8S_NAME -n ${{ inputs.NAMESPACE }} --overwrite
@@ -66,13 +72,8 @@ jobs:
           DEPLOYMENTS=$(kubectl get deployments -n ${{ inputs.NAMESPACE }} -o jsonpath='{.items[*].metadata.name}')
           for dep in $DEPLOYMENTS; do
             kubectl rollout status deployment/$dep -n ${{ inputs.NAMESPACE }} --timeout=300s
-          done
-          # Wait until LoadBalancer external IPs are ready
-          for svc in product-service order-service; do
-            while [ -z "$(kubectl get svc $svc -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')" ]; do
-              echo "Waiting for external IP for $svc..."
-              sleep 5
-            done
+            # Wait for pods to be ready
+            kubectl wait --for=condition=Ready pod -l app=$dep -n ${{ inputs.NAMESPACE }} --timeout=120s
           done
 
       - name: Get Backend External IPs
@@ -96,6 +97,10 @@ jobs:
       - name: Deploy Frontend
         run: |
           kubectl create deployment frontend --image=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          TYPE=LoadBalancer
+          if [ "${{ inputs.STAGING }}" = "true" ]; then
+            TYPE=ClusterIP
+          fi
           kubectl expose deployment frontend --port=80 --target-port=80 --name=frontend -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl set image deployment/frontend *=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
           kubectl label deployment frontend app=frontend -n ${{ inputs.NAMESPACE }} --overwrite
@@ -124,71 +129,37 @@ jobs:
         run: |
           echo "🔗 Setting up port forwarding for integration tests..."
 
-          # Port forward all deployed services
-          kubectl port-forward service/product-service 8000:80 -n ${{ inputs.NAMESPACE }} &
-          PRODUCT_PF_PID=$!
+          for service in product-service order-service frontend; do
+            POD=$(kubectl get pod -n ${{ inputs.NAMESPACE }} -l app=$service -o jsonpath="{.items[0].metadata.name}")
+            PORT=""
+            LOCAL_PORT=""
+            case $service in
+              product-service) LOCAL_PORT=8000; PORT=80 ;;
+              order-service) LOCAL_PORT=8001; PORT=80 ;;
+              frontend) LOCAL_PORT=8080; PORT=80 ;;
+            esac
+            kubectl port-forward pod/$POD $LOCAL_PORT:$PORT -n ${{ inputs.NAMESPACE }} &
+            echo "$service port-forward started at localhost:$LOCAL_PORT"
+          done
 
-          kubectl port-forward service/order-service 8001:80 -n ${{ inputs.NAMESPACE }} &
-          ORDER_PF_PID=$!
-
-          kubectl port-forward service/frontend 8080:80 -n ${{ inputs.NAMESPACE }} &
-          FRONTEND_PF_PID=$!
-
-          echo "Port forwarding PIDs: Product=$PRODUCT_PF_PID, Order=$ORDER_PF_PID, Frontend=$FRONTEND_PF_PID"
-
-          # Wait for port forwards to establish
-          echo "⏳ Waiting for port forwards to establish..."
+          # Wait a bit for port-forwards to establish
           sleep 15
 
-          # Verify services are accessible
-          echo "🔍 Verifying service accessibility..."
-
-          # Test product service
-          if curl -f -s http://localhost:8000/health >/dev/null 2>&1; then
-            echo "✅ Product service accessible on localhost:8000"
-          else
-            echo "⚠️ Product service not accessible"
-          fi
-
-          # Test order service
-          if curl -f -s http://localhost:8001/health >/dev/null 2>&1; then
-            echo "✅ Order service accessible on localhost:8001"
-          else
-            echo "⚠️ Order service not accessible"
-          fi
-
-          # Test frontend
-          if curl -f -s http://localhost:8080 >/dev/null 2>&1; then
-            echo "✅ Frontend accessible on localhost:8080"
-          else
-            echo "⚠️ Frontend not accessible"
-          fi
-
-          # Set environment variables for tests
+          # Set environment variables
           export PRODUCT_API_IP="http://localhost:8000"
           export ORDER_API_IP="http://localhost:8001"
           export FRONTEND_URL="http://localhost:8080"
 
           echo "🧪 Running integration tests..."
           cd util
+          npm test --testTimeout=30000 || true
 
-          # Run tests with extended timeout
-          npm test --testTimeout=30000 || {
-            echo "❌ Integration tests failed"
-            # Cleanup on failure
-            kill $PRODUCT_PF_PID $ORDER_PF_PID $FRONTEND_PF_PID 2>/dev/null || true
-            pkill -f "kubectl port-forward" 2>/dev/null || true
-            exit 1
-          }
-
-          echo "✅ Integration tests completed successfully"
-
-          # Cleanup port forwarding
-          echo "🧹 Cleaning up port forwarding..."
-          kill $PRODUCT_PF_PID $ORDER_PF_PID $FRONTEND_PF_PID 2>/dev/null || true
-          pkill -f "kubectl port-forward" 2>/dev/null || true
-
-          echo "✅ Port forwarding cleanup complete"
+        # Always cleanup port-forwards and namespace
+      - name: Cleanup Port-Forwarding and Namespace
+        if: ${{ always() }}
+        run: |
+          pkill -f "kubectl port-forward" || true
+          kubectl delete namespace ${{ inputs.NAMESPACE }} || echo "Namespace already deleted"
 
   notify-email:
     needs: deploy
