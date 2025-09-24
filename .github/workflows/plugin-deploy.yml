@@ -13,6 +13,15 @@ on:
         required: false
         type: boolean
         default: false
+      secrets:
+        AZURE_CREDENTIALS:
+          required: true
+        ACR_USERNAME:
+          required: true
+        ACR_PASSWORD:
+          required: true
+        ACR_LOGIN_SERVER:
+          required: true
 
 jobs:
   deploy:
