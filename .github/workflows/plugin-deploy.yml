@@ -51,40 +51,42 @@ jobs:
       - name: Create Namespace
         run: kubectl create namespace ${{ inputs.NAMESPACE }} || echo "Namespace exists"
 
+      # -------------------------------
+      # Deploy Databases
+      # -------------------------------
+      - name: Deploy Product DB
+        run: |
+          kubectl apply -f k8s/product-db.yaml -n ${{ inputs.NAMESPACE }}
+          kubectl rollout status deployment/product-db -n ${{ inputs.NAMESPACE }}
+          kubectl wait --for=condition=Ready pod -l app=product-db -n ${{ inputs.NAMESPACE }} --timeout=180s
+
+      - name: Deploy Order DB
+        run: |
+          kubectl apply -f k8s/order-db.yaml -n ${{ inputs.NAMESPACE }}
+          kubectl rollout status deployment/order-db -n ${{ inputs.NAMESPACE }}
+          kubectl wait --for=condition=Ready pod -l app=order-db -n ${{ inputs.NAMESPACE }} --timeout=180s
+
+      # -------------------------------
+      # Deploy Backend Services
+      # -------------------------------
       - name: Deploy Backend Services
         run: |
-          # Deploy Product Service
-          SERVICE_PORT=8000
           TYPE=LoadBalancer
           if [ "${{ inputs.STAGING }}" = "true" ]; then TYPE=ClusterIP; fi
 
+          # Product Service
           kubectl create deployment product-service \
             --image=$ACR_LOGIN_SERVER/product_service:${{ inputs.IMAGE_TAG }} \
             -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
-          kubectl expose deployment product-service \
-            --type=$TYPE \
-            --port=$SERVICE_PORT \
-            --target-port=8000 \
-            --name=product-service \
-            -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
+          kubectl expose deployment product-service --type=$TYPE --port=8000 --target-port=8000 -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl label deployment product-service app=product-service -n ${{ inputs.NAMESPACE }} --overwrite
           kubectl set image deployment/product-service *=$ACR_LOGIN_SERVER/product_service:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
 
-          # Deploy Order Service  
-          SERVICE_PORT=8001
+          # Order Service
           kubectl create deployment order-service \
             --image=$ACR_LOGIN_SERVER/order_service:${{ inputs.IMAGE_TAG }} \
             -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
-          kubectl expose deployment order-service \
-            --type=$TYPE \
-            --port=$SERVICE_PORT \
-            --target-port=8001 \
-            --name=order-service \
-            -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
+          kubectl expose deployment order-service --type=$TYPE --port=8001 --target-port=8001 -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl label deployment order-service app=order-service -n ${{ inputs.NAMESPACE }} --overwrite
           kubectl set image deployment/order-service *=$ACR_LOGIN_SERVER/order_service:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
 
@@ -95,6 +97,9 @@ jobs:
             kubectl wait --for=condition=Ready pod -l app=$dep -n ${{ inputs.NAMESPACE }} --timeout=180s
           done
 
+      # -------------------------------
+      # Deploy Frontend
+      # -------------------------------
       - name: Deploy Frontend
         run: |
           docker build -t $ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} frontend/
@@ -104,17 +109,8 @@ jobs:
           TYPE=LoadBalancer
           if [ "${{ inputs.STAGING }}" = "true" ]; then TYPE=ClusterIP; fi
 
-          kubectl create deployment frontend \
-            --image=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} \
-            -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
-          kubectl expose deployment frontend \
-            --port=80 \
-            --target-port=80 \
-            --type=$TYPE \
-            --name=frontend \
-            -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
+          kubectl create deployment frontend --image=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl expose deployment frontend --port=80 --target-port=80 --type=$TYPE -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl label deployment frontend app=frontend -n ${{ inputs.NAMESPACE }} --overwrite
           kubectl set image deployment/frontend *=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
 
@@ -171,18 +167,15 @@ jobs:
             kubectl wait --for=condition=Ready pod -l app=$svc -n $NAMESPACE --timeout=180s
           done
 
-      - name: Setup Port Forwarding with Correct Ports
+      - name: Setup Port Forwarding
         run: |
           NAMESPACE="${{ inputs.NAMESPACE }}"
 
-          # Function to setup port forward dynamically
           setup_port_forward() {
             local service=$1
             local local_port=$2
-
             TARGET_PORT=$(kubectl get svc $service -n $NAMESPACE -o jsonpath='{.spec.ports[0].targetPort}')
             echo "🚀 Setting up port forward for $service: localhost:$local_port -> service:$TARGET_PORT"
-
             pkill -f "port-forward.*:$local_port" || true
             kubectl port-forward svc/$service $local_port:$TARGET_PORT -n $NAMESPACE &
             PID=$!
@@ -199,19 +192,15 @@ jobs:
           setup_port_forward "product-service" 18000
           setup_port_forward "order-service" 18001
           setup_port_forward "frontend" 18002
-
           echo "⏳ Waiting 10 seconds for port forwards to stabilize..."
           sleep 10
 
       - name: Test Service Connectivity
         run: |
-          echo "🧪 Testing service connectivity..."
-
           test_endpoint() {
             local name=$1
             local url=$2
             local expected_status=${3:-200}
-
             echo "Testing $name at $url"
             for i in {1..10}; do
               if curl -f -s --max-time 5 "$url" >/dev/null 2>&1; then
