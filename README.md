@@ -37,4 +37,4 @@ image: <YOUR_ACR_NAME>.azurecr.io/<image_name>:<image_tag>
 
 Ensure you replace all placeholders value to actual values.
 
-#trigger 6
+#trigger 7
