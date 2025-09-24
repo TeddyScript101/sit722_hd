@@ -31,6 +31,12 @@ on:
       ACR_PASSWORD:
         description: "ACR password"
         required: true
+      DOCKERHUB_USERNAME:
+        description: "Docker Hub username"
+        required: false
+      DOCKERHUB_PASSWORD:
+        description: "Docker Hub password"
+        required: false
 
 jobs:
   scout-scan:
@@ -38,6 +44,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
+      - name: Login to Docker Hub (for Docker Scout)
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_PASSWORD != '' }}
+        run: |
+          echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
 
       - name: Login to ACR
         run: |
@@ -73,7 +84,7 @@ jobs:
           TAG=${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
           FULL_IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/$IMAGE:$TAG
 
-          echo "# 🔍 Docker Scout Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "# 🔒 Docker Scout Security Scan Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`$FULL_IMAGE\`" >> $GITHUB_STEP_SUMMARY
           echo "**Scan Date:** $(date)" >> $GITHUB_STEP_SUMMARY
