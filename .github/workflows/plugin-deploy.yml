@@ -188,31 +188,32 @@ jobs:
           cd util
           npm test --testTimeout=30000 || true
 
-      # Always cleanup port-forwards and namespace
-      - name: Cleanup Port-Forwarding and Namespace
+      - name: Cleanup
         if: ${{ always() }}
         run: |
-          echo "🧹 Cleaning up port-forwards..."
-          pkill -f "kubectl port-forward" || true
+          # Only clean up if not production, or if previous steps failed
+          if [[ "${{ inputs.STAGING }}" == "true" || "${{ job.status }}" == "failure" ]]; then
+            echo "🧹 Cleaning up port-forwards..."
+            pkill -f "kubectl port-forward" || true
 
-          echo "🗑️ Deleting namespace..."
-          kubectl delete namespace ${{ inputs.NAMESPACE }} || echo "Namespace already deleted"
+            echo "🗑️ Deleting namespace..."
+            kubectl delete namespace ${{ inputs.NAMESPACE }} || echo "Namespace already deleted"
+          else
+            echo "✅ Skipping cleanup for production success."
+          fi
 
   notify-email:
-    needs: deploy
+    needs: post-deploy-integration-tests
     runs-on: ubuntu-latest
-    if: ${{ inputs.STAGING == false }}
-    steps:
-      - name: Send Production Deployment Email
-        uses: ./.github/workflows/plugin-send-email.yml
-        with:
-          email_to: "teddyhinyp@gmail.com"
-          email_subject: ${{ needs.deploy.result == 'success' && 'Production Deployment Succeeded' || 'Production Deployment Failed' }}
-          email_body: |
-            Production deployment to namespace ${{ inputs.NAMESPACE }} has completed.
-            Status: ${{ needs.deploy.result }}
-            Image Tag: ${{ inputs.IMAGE_TAG }}
-            Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        secrets:
-          EMAIL_USER: ${{ secrets.EMAIL_USER }}
-          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+    uses: ./.github/workflows/plugin-send-email.yml
+    with:
+      email_to: "teddyhinyp@gmail.com"
+      email_subject: ${{ needs.deploy.result == 'success' && 'Production Deployment Succeeded' || 'Production Deployment Failed' }}
+      email_body: |
+        Deployment to namespace ${{ inputs.NAMESPACE }} has completed.
+        Status: ${{ needs.deploy.result }}
+        Image Tag: ${{ inputs.IMAGE_TAG }}
+        Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    secrets:
+      EMAIL_USER: ${{ secrets.EMAIL_USER }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
