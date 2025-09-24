@@ -204,7 +204,6 @@ jobs:
 
   notify-email:
     needs: post-deploy-integration-tests
-    runs-on: ubuntu-latest
     uses: ./.github/workflows/plugin-send-email.yml
     with:
       email_to: "teddyhinyp@gmail.com"
