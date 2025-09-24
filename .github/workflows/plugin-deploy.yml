@@ -57,14 +57,14 @@ jobs:
       - name: Deploy Product DB
         run: |
           kubectl apply -f k8s/product-db.yaml -n ${{ inputs.NAMESPACE }}
-          kubectl rollout status deployment/product-db -n ${{ inputs.NAMESPACE }}
-          kubectl wait --for=condition=Ready pod -l app=product-db -n ${{ inputs.NAMESPACE }} --timeout=180s
+          kubectl rollout status deployment/product-db-deployment-hd -n ${{ inputs.NAMESPACE }}
+          kubectl wait --for=condition=Ready pod -l app=product-db-deployment-hd -n ${{ inputs.NAMESPACE }} --timeout=180s
 
       - name: Deploy Order DB
         run: |
           kubectl apply -f k8s/order-db.yaml -n ${{ inputs.NAMESPACE }}
-          kubectl rollout status deployment/order-db -n ${{ inputs.NAMESPACE }}
-          kubectl wait --for=condition=Ready pod -l app=order-db -n ${{ inputs.NAMESPACE }} --timeout=180s
+          kubectl rollout status deployment/order-db-deployment-hd -n ${{ inputs.NAMESPACE }}
+          kubectl wait --for=condition=Ready pod -l app=order-db-deployment-hd -n ${{ inputs.NAMESPACE }} --timeout=180s
 
       # -------------------------------
       # Deploy Backend Services
