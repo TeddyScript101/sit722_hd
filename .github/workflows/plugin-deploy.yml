@@ -137,18 +137,21 @@ jobs:
       - name: Run API Integration Tests
         run: |
           echo "🔗 Setting up port forwarding for integration tests..."
-          declare -A SERVICES=( ["product-service"]="8000:80" ["order-service"]="8001:80" ["frontend"]="8080:80" )
 
-          for service in "${!SERVICES[@]}"; do
-            LOCAL_PORT=${SERVICES[$service]%:*}
-            TARGET_PORT=${SERVICES[$service]#*:}
-            echo "🚀 Forwarding $service: localhost:$LOCAL_PORT -> service port $TARGET_PORT"
+          SERVICES=("product-service" "order-service" "frontend")
+
+          for service in "${SERVICES[@]}"; do
+            # Get the target port of the service from Kubernetes
+            TARGET_PORT=$(kubectl get svc $service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].targetPort}')
+            LOCAL_PORT=$(kubectl get svc $service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')
+
+            echo "🚀 Forwarding $service: localhost:$LOCAL_PORT -> service target port $TARGET_PORT"
             kubectl port-forward svc/$service $LOCAL_PORT:$TARGET_PORT -n ${{ inputs.NAMESPACE }} &
           done
 
-          declare -A PORTS=( ["product-service"]="8000" ["order-service"]="8001" ["frontend"]="8080" )
-          for service in "${!PORTS[@]}"; do
-            PORT=${PORTS[$service]}
+          # Wait for services to become healthy
+          for service in "${SERVICES[@]}"; do
+            PORT=$(kubectl get svc $service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')
             echo "⏳ Waiting for $service on localhost:$PORT..."
             for i in {1..20}; do
               if curl -s http://localhost:$PORT/health; then
@@ -161,17 +164,17 @@ jobs:
             done
           done
 
-          export PRODUCT_API_IP="http://localhost:8000"
-          export ORDER_API_IP="http://localhost:8001"
-          export FRONTEND_URL="http://localhost:8080"
+          export PRODUCT_API_IP="http://localhost:$(kubectl get svc product-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')"
+          export ORDER_API_IP="http://localhost:$(kubectl get svc order-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')"
+          export FRONTEND_URL="http://localhost:$(kubectl get svc frontend -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')"
 
           echo "🧪 Running integration tests..."
           cd util
           npm test --testTimeout=30000 || true
 
-      - name: Cleanup Port-Forwards and Namespace
-        if: ${{ always() }}
-        run: |
+  - name: Cleanup Port-Forwards and Namespace
+    if: ${{ always() }}
+    run: |
           echo "🧹 Cleaning up port-forwards..."
           pkill -f "kubectl port-forward" || true
 
