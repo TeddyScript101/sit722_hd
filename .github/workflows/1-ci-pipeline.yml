@@ -114,16 +114,41 @@ jobs:
           docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
 
   # ---------------------------------------
-  # 3️⃣ Scan Docker Images (Reusable Workflow)
+  # 3️⃣ Scan Docker Images - Order Service
   # ---------------------------------------
-  docker-scout-scan:
+  docker-scout-scan-order:
     needs: build-docker-images
     uses: ./.github/workflows/plugin-docker-scout-scan.yml
-    strategy:
-      matrix:
-        service: [order_service, product_service, frontend]
     with:
-      IMAGE_NAME: ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}
+      IMAGE_NAME: order_service
+      IMAGE_TAG: ${{ github.sha }}
+    secrets:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  # ---------------------------------------
+  # 3️⃣ Scan Docker Images - Product Service
+  # ---------------------------------------
+  docker-scout-scan-product:
+    needs: build-docker-images
+    uses: ./.github/workflows/plugin-docker-scout-scan.yml
+    with:
+      IMAGE_NAME: product_service
+      IMAGE_TAG: ${{ github.sha }}
+    secrets:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  # ---------------------------------------
+  # 3️⃣ Scan Docker Images - Frontend
+  # ---------------------------------------
+  docker-scout-scan-frontend:
+    needs: build-docker-images
+    uses: ./.github/workflows/plugin-docker-scout-scan.yml
+    with:
+      IMAGE_NAME: frontend
       IMAGE_TAG: ${{ github.sha }}
     secrets:
       ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
@@ -134,7 +159,12 @@ jobs:
   # 4️⃣ Push Docker Images to ACR
   # ---------------------------------------
   push-to-acr:
-    needs: docker-scout-scan
+    needs:
+      [
+        docker-scout-scan-order,
+        docker-scout-scan-product,
+        docker-scout-scan-frontend,
+      ]
     runs-on: ubuntu-latest
     strategy:
       matrix:
