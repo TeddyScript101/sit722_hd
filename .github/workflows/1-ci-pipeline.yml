@@ -124,6 +124,7 @@ jobs:
       IMAGE_NAME: order_service
       IMAGE_TAG: ${{ github.sha }}
     secrets:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
 
@@ -137,6 +138,7 @@ jobs:
       IMAGE_NAME: product_service
       IMAGE_TAG: ${{ github.sha }}
     secrets:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
 
@@ -150,6 +152,7 @@ jobs:
       IMAGE_NAME: frontend
       IMAGE_TAG: ${{ github.sha }}
     secrets:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
 
