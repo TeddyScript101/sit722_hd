@@ -34,9 +34,17 @@ jobs:
         run: pip install -r requirements.txt flake8 bandit
 
       - name: Lint code with Flake8
-        run: flake8 ./app ./tests || true
+        id: flake8
+        run: |
+          flake8 ./app ./tests > flake8_report.txt || true
+          echo "### Flake8 Report" >> $GITHUB_STEP_SUMMARY
+          cat flake8_report.txt >> $GITHUB_STEP_SUMMARY
         continue-on-error: true
 
       - name: Security scan with Bandit
-        run: bandit -r ./app || true
+        id: bandit
+        run: |
+          bandit -r ./app -f txt -o bandit_report.txt || true
+          echo "### Bandit Security Report" >> $GITHUB_STEP_SUMMARY
+          cat bandit_report.txt >> $GITHUB_STEP_SUMMARY
         continue-on-error: true

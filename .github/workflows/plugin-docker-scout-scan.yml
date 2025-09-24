@@ -1,33 +1,115 @@
 name: Plugin - Docker Scout Scan
 
 on:
-  workflow_dispatch: # Manual trigger
-  workflow_call: # Callable by other workflows
+  workflow_dispatch:
     inputs:
       IMAGE_NAME:
+        description: "Docker image name"
+        required: true
+        default: "my-image"
+      IMAGE_TAG:
+        description: "Docker image tag"
+        required: true
+        default: "latest"
+  workflow_call:
+    inputs:
+      IMAGE_NAME:
+        description: "Docker image name"
         required: true
         type: string
       IMAGE_TAG:
+        description: "Docker image tag"
         required: true
         type: string
+    secrets:
+      ACR_LOGIN_SERVER:
+        description: "Azure Container Registry login server"
+        required: true
+      ACR_USERNAME:
+        description: "ACR username"
+        required: true
+      ACR_PASSWORD:
+        description: "ACR password"
+        required: true
+      DOCKERHUB_USERNAME:
+        description: "Docker Hub username (required for Docker Scout)"
+        required: true
+      DOCKERHUB_PASSWORD:
+        description: "Docker Hub password (required for Docker Scout)"
+        required: true
 
 jobs:
   scout-scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Login to Docker Hub
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Login to Docker Hub (required for Docker Scout)
         run: |
           echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
 
+      - name: Login to ACR
+        run: |
+          echo ${{ secrets.ACR_PASSWORD }} | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+
       - name: Install Docker Scout CLI
         run: |
-          if ! docker scout version &>/dev/null; then
-            echo "Installing Docker Scout..."
-            docker scout --version || true
+          curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh | sh -s --
+          echo "$HOME/.docker/scout" >> $GITHUB_PATH
+
+      - name: Verify Docker Scout Installation
+        run: docker scout version
+
+      - name: Pull Docker Image
+        run: |
+          IMAGE=${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}
+          TAG=${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
+          FULL_IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/$IMAGE:$TAG
+          echo "Pulling image: $FULL_IMAGE"
+          docker pull $FULL_IMAGE
+
+      - name: Scan Docker Image for CVEs
+        run: |
+          IMAGE=${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}
+          TAG=${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
+          FULL_IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/$IMAGE:$TAG
+          echo "Scanning image: $FULL_IMAGE"
+          docker scout cves $FULL_IMAGE | tee scout-results.txt
+
+      - name: Generate Summary Report
+        run: |
+          IMAGE=${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}
+          TAG=${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
+          FULL_IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/$IMAGE:$TAG
+
+          echo "# 🔒 Docker Scout Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`$FULL_IMAGE\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if grep -q "No vulnerabilities found" scout-results.txt; then
+            echo "## ✅ Status: CLEAN" >> $GITHUB_STEP_SUMMARY
+            echo "No vulnerabilities detected in this image." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ⚠️ Status: VULNERABILITIES FOUND" >> $GITHUB_STEP_SUMMARY
+            for SEV in CRITICAL HIGH MEDIUM LOW; do
+              COUNT=$(grep -o "$SEV" scout-results.txt | wc -l)
+              if [ "$COUNT" -gt 0 ]; then
+                case $SEV in
+                  CRITICAL) ICON="🔴";;
+                  HIGH)     ICON="🟠";;
+                  MEDIUM)   ICON="🟡";;
+                  LOW)      ICON="🔵";;
+                esac
+                echo "- $ICON **$SEV:** $COUNT" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
           fi
 
-      - name: Scan Docker Image
-        run: |
-          docker scout cves ${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_TAG }} --json > scout-report.json
-          docker scout cves ${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_TAG }}
-          echo "✅ Docker Scout scan completed"
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 Full Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat scout-results.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

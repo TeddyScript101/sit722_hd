@@ -1,8 +1,21 @@
 name: Plugin - Send Email
 
 on:
-  workflow_dispatch: # allows manual trigger
-  workflow_call: # allows other workflows to call this
+  workflow_dispatch:
+    inputs:
+      email_to:
+        description: "Recipient email"
+        required: true
+        default: "default@example.com"
+      email_subject:
+        description: "Email subject"
+        required: true
+        default: "GitHub Actions Notification"
+      email_body:
+        description: "Email body"
+        required: true
+        default: "This is an automated email."
+  workflow_call:
     inputs:
       email_to:
         description: "Recipient email"
@@ -16,27 +29,38 @@ on:
         description: "Email body"
         required: true
         type: string
+    secrets:
+      EMAIL_USER:
+        description: "Email user for authentication"
+        required: true
+      EMAIL_PASSWORD:
+        description: "Email password for authentication"
+        required: true
 
 jobs:
   send_email:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Install dependencies
-        run: npm install nodemailer
+        run: |
+          cd util
+          npm install nodemailer
 
       - name: Send Email
-        run: node scripts/send-email.js
+        run: |
+          cd util
+          node sendEmail.js
         env:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-          EMAIL_TO: ${{ github.event.inputs.email_to || 'default@example.com' }}
-          EMAIL_SUBJECT: ${{ github.event.inputs.email_subject || 'GitHub Actions Notification' }}
-          EMAIL_BODY: ${{ github.event.inputs.email_body || 'This is an automated email.' }}
+          EMAIL_TO: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.email_to || inputs.email_to }}
+          EMAIL_SUBJECT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.email_subject || inputs.email_subject }}
+          EMAIL_BODY: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.email_body || inputs.email_body }}

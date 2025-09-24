@@ -6,17 +6,26 @@ on:
     types:
       - completed
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.head_branch == 'staging' }}
+    if: ${{ github.event.workflow_run.head_branch == 'staging' && github.event.workflow_run.conclusion == 'success' }}
     uses: ./.github/workflows/plugin-deploy.yml
     with:
       NAMESPACE: staging-${{ github.run_id }}
       IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
       STAGING: true
+    secrets:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
 
   create-pr:
-    if: ${{ github.event.workflow_run.head_branch == 'staging' }}
+    if: ${{ github.event.workflow_run.head_branch == 'staging' && github.event.workflow_run.conclusion == 'success' }}
     needs: deploy
     uses: ./.github/workflows/plugin-create-pull-request.yml
     with:

@@ -1,10 +1,14 @@
 name: Stage1 - CI Pipeline - Staging Branch
 
 on:
+  workflow_dispatch:
   push:
     branches: [staging]
 
 jobs:
+  # ---------------------------------------
+  # 1️⃣ Test Backend Services
+  # ---------------------------------------
   test-backend-services:
     runs-on: ubuntu-latest
     services:
@@ -48,76 +52,40 @@ jobs:
             sleep 2
           done
 
-      - name: Create databases if they don't exist
+      - name: Create databases if missing
         run: |
-          psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'orders'" | grep -q 1 || psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres -c "CREATE DATABASE orders;"
-          psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'products'" | grep -q 1 || psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres -c "CREATE DATABASE products;"
+          for db in orders products; do
+            psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres \
+              -tc "SELECT 1 FROM pg_database WHERE datname = '$db'" | grep -q 1 || \
+              psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres \
+              -c "CREATE DATABASE $db;"
+          done
 
-      - name: Install dependencies for ${{ matrix.service }}
+      - name: Install dependencies
         run: |
           cd backend/${{ matrix.service }}
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Set DATABASE_URL for service
+      - name: Set DATABASE_URL
         run: |
           if [ "${{ matrix.service }}" = "order_service" ]; then
-            export DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/orders
-          elif [ "${{ matrix.service }}" = "product_service" ]; then
-            export DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/products
+            echo "DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/orders" >> $GITHUB_ENV
+          else
+            echo "DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/products" >> $GITHUB_ENV
           fi
-          echo "DATABASE_URL=$DATABASE_URL" >> $GITHUB_ENV
 
-      - name: Run tests for ${{ matrix.service }}
+      - name: Run tests
         run: |
-          echo "🟢 Starting tests for ${{ matrix.service }}..."
           cd backend/${{ matrix.service }}
           python -m pytest tests/ -v
-          if [ $? -eq 0 ]; then
-            echo "✅ All tests passed for ${{ matrix.service }}"
-          else
-            echo "❌ Some tests failed for ${{ matrix.service }}"
-            exit 1
-          fi
 
-  build-and-scout:
+  # ---------------------------------------
+  # 2️⃣ Build and Push Docker Images to ACR
+  # ---------------------------------------
+  build-and-push-docker-images:
     needs: test-backend-services
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [order_service, product_service, frontend]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Login to Docker Hub
-        run: |
-          echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
-
-      - name: Build Docker image for ${{ matrix.service }}
-        run: |
-          if [ "${{ matrix.service }}" = "frontend" ]; then
-            cd frontend
-          else
-            cd backend/${{ matrix.service }}
-          fi
-          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
-
-      - name: Scan Docker image with Docker Scout
-        uses: ./.github/workflows/plugin-docker-scout-scan.yml
-        with:
-          IMAGE_NAME: ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}
-          IMAGE_TAG: ${{ github.sha }}
-
-  push-to-acr:
-    needs: build-and-scout
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -129,26 +97,90 @@ jobs:
 
       - name: Login to ACR
         run: |
-          echo ${{ secrets.ACR_PASSWORD }} | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
+          echo ${{ secrets.ACR_PASSWORD }} | docker login -u ${{ secrets.ACR_USERNAME }} --password-stdin ${{ secrets.ACR_LOGIN_SERVER }}
 
-      - name: Push Docker image to ACR
+      - name: Build Docker image
+        run: |
+          if [ "${{ matrix.service }}" = "frontend" ]; then
+            cd frontend
+          else
+            cd backend/${{ matrix.service }}
+          fi
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
+
+      - name: Push Docker image
         run: |
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }}
           docker tag ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:latest
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:latest
-          echo "✅ Built, scanned, and pushed ${{ matrix.service }} with tags: ${{ github.sha }} and latest"
 
+  # ---------------------------------------
+  # 3️⃣ Scan Docker Images - Order Service
+  # ---------------------------------------
+  docker-scout-scan-order:
+    needs: build-and-push-docker-images
+    uses: ./.github/workflows/plugin-docker-scout-scan.yml
+    with:
+      IMAGE_NAME: order_service
+      IMAGE_TAG: ${{ github.sha }}
+    secrets:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  # ---------------------------------------
+  # 3️⃣ Scan Docker Images - Product Service
+  # ---------------------------------------
+  docker-scout-scan-product:
+    needs: build-and-push-docker-images
+    uses: ./.github/workflows/plugin-docker-scout-scan.yml
+    with:
+      IMAGE_NAME: product_service
+      IMAGE_TAG: ${{ github.sha }}
+    secrets:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  # ---------------------------------------
+  # 3️⃣ Scan Docker Images - Frontend
+  # ---------------------------------------
+  docker-scout-scan-frontend:
+    needs: build-and-push-docker-images
+    uses: ./.github/workflows/plugin-docker-scout-scan.yml
+    with:
+      IMAGE_NAME: frontend
+      IMAGE_TAG: ${{ github.sha }}
+    secrets:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+  # ---------------------------------------
+  # 4️⃣ Notify via Email on Failure
+  # ---------------------------------------
   notify-email:
-    needs: push-to-acr
-    if: ${{ needs.push-to-acr.result != 'success' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger Email Notification
-        uses: ./.github/workflows/send-email.yml
-        with:
-          email_to: "teddyhiny@gmail.com"
-          email_subject: "CI Pipeline Failed on Staging Branch"
-          email_body: |
-            CI Pipeline for branch staging has failed.
-            Commit: ${{ github.sha }}
-            Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    needs:
+      [
+        docker-scout-scan-order,
+        docker-scout-scan-product,
+        docker-scout-scan-frontend,
+      ]
+    if: ${{ failure() }}
+    uses: ./.github/workflows/plugin-send-email.yml
+    with:
+      email_to: "teddyhiny@gmail.com"
+      email_subject: "CI Pipeline Failed on Staging Branch"
+      email_body: |
+        CI Pipeline for branch staging has failed.
+        Commit: ${{ github.sha }}
+        Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    secrets:
+      EMAIL_USER: ${{ secrets.EMAIL_USER }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
