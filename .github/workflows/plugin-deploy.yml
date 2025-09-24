@@ -1,42 +1,33 @@
 name: Plugin - Deploy to AKS
 
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
       NAMESPACE:
+        description: "Kubernetes namespace"
         required: true
-        type: string
+        default: "staging"
       IMAGE_TAG:
+        description: "Docker image tag to deploy"
         required: true
-        type: string
+        default: "latest"
       STAGING:
+        description: "Deploy as staging (ClusterIP) instead of LoadBalancer"
         required: false
-        type: boolean
         default: false
-    secrets:
-      AZURE_CREDENTIALS:
-        required: true
-      ACR_USERNAME:
-        required: true
-      ACR_PASSWORD:
-        required: true
-      ACR_LOGIN_SERVER:
-        required: true
-      EMAIL_USER:
-        required: true
-      EMAIL_PASSWORD:
-        required: true
+
+env:
+  RESOURCE_GROUP: sit722devopsteddy-rg
+  AKS_NAME: sit722devopsteddy-aks
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      RESOURCE_GROUP: sit722devopsteddy-rg
-      AKS_NAME: sit722devopsteddy-aks
       ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Azure Login
@@ -48,72 +39,72 @@ jobs:
         run: az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_NAME
 
       - name: Create Namespace
-        run: kubectl create namespace ${{ inputs.NAMESPACE }} || echo "Namespace exists"
+        run: kubectl create namespace ${{ github.event.inputs.NAMESPACE }} || echo "Namespace exists"
 
       - name: Deploy Backend Services
         run: |
           for service in order_service product_service; do
             K8S_NAME=$(echo $service | sed 's/_/-/g')
-            kubectl create deployment $K8S_NAME \
-              --image=$ACR_LOGIN_SERVER/$service:${{ inputs.IMAGE_TAG }} \
-              -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
             TARGET_PORT=8000
             TYPE=LoadBalancer
-            if [ "${{ inputs.STAGING }}" = "true" ]; then TYPE=ClusterIP; fi
+            if [ "${{ github.event.inputs.STAGING }}" = "true" ]; then TYPE=ClusterIP; fi
 
+            # Create or update deployment
+            kubectl create deployment $K8S_NAME \
+              --image=$ACR_LOGIN_SERVER/$service:${{ github.event.inputs.IMAGE_TAG }} \
+              -n ${{ github.event.inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+            # Expose deployment
             kubectl expose deployment $K8S_NAME \
               --type=$TYPE \
               --port=80 \
               --target-port=$TARGET_PORT \
               --name=$K8S_NAME \
-              -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+              -n ${{ github.event.inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
 
-            kubectl label deployment $K8S_NAME app=$K8S_NAME -n ${{ inputs.NAMESPACE }} --overwrite
-            kubectl set image deployment/$K8S_NAME *=$ACR_LOGIN_SERVER/$service:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
+            kubectl label deployment $K8S_NAME app=$K8S_NAME -n ${{ github.event.inputs.NAMESPACE }} --overwrite
+            kubectl set image deployment/$K8S_NAME *=$ACR_LOGIN_SERVER/$service:${{ github.event.inputs.IMAGE_TAG }} -n ${{ github.event.inputs.NAMESPACE }}
           done
 
       - name: Wait for Backend Deployments
         run: |
-          for dep in $(kubectl get deployments -n ${{ inputs.NAMESPACE }} -o jsonpath='{.items[*].metadata.name}'); do
-            kubectl rollout status deployment/$dep -n ${{ inputs.NAMESPACE }} --timeout=300s
-            kubectl wait --for=condition=Ready pod -l app=$dep -n ${{ inputs.NAMESPACE }} --timeout=180s
+          for dep in $(kubectl get deployments -n ${{ github.event.inputs.NAMESPACE }} -o jsonpath='{.items[*].metadata.name}'); do
+            kubectl rollout status deployment/$dep -n ${{ github.event.inputs.NAMESPACE }} --timeout=300s
+            kubectl wait --for=condition=Ready pod -l app=$dep -n ${{ github.event.inputs.NAMESPACE }} --timeout=180s
           done
 
       - name: Deploy Frontend
         run: |
-          docker build -t $ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} frontend/
+          docker build -t $ACR_LOGIN_SERVER/frontend:${{ github.event.inputs.IMAGE_TAG }} frontend/
           echo ${{ secrets.ACR_PASSWORD }} | docker login $ACR_LOGIN_SERVER -u ${{ secrets.ACR_USERNAME }} --password-stdin
-          docker push $ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }}
-
-          kubectl create deployment frontend \
-            --image=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} \
-            -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          docker push $ACR_LOGIN_SERVER/frontend:${{ github.event.inputs.IMAGE_TAG }}
 
           TYPE=LoadBalancer
-          if [ "${{ inputs.STAGING }}" = "true" ]; then TYPE=ClusterIP; fi
+          if [ "${{ github.event.inputs.STAGING }}" = "true" ]; then TYPE=ClusterIP; fi
+
+          kubectl create deployment frontend \
+            --image=$ACR_LOGIN_SERVER/frontend:${{ github.event.inputs.IMAGE_TAG }} \
+            -n ${{ github.event.inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
 
           kubectl expose deployment frontend \
             --port=80 \
             --target-port=80 \
             --type=$TYPE \
             --name=frontend \
-            -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+            -n ${{ github.event.inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
 
-          kubectl label deployment frontend app=frontend -n ${{ inputs.NAMESPACE }} --overwrite
-          kubectl set image deployment/frontend *=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
+          kubectl label deployment frontend app=frontend -n ${{ github.event.inputs.NAMESPACE }} --overwrite
+          kubectl set image deployment/frontend *=$ACR_LOGIN_SERVER/frontend:${{ github.event.inputs.IMAGE_TAG }} -n ${{ github.event.inputs.NAMESPACE }}
 
       - name: Wait for Frontend Deployment
-        run: kubectl rollout status deployment/frontend -n ${{ inputs.NAMESPACE }} --timeout=300s
+        run: kubectl rollout status deployment/frontend -n ${{ github.event.inputs.NAMESPACE }} --timeout=300s
 
-    post-deploy-integration-tests:
+  post-deploy-integration-tests:
     needs: deploy
     runs-on: ubuntu-latest
-    env:
-      RESOURCE_GROUP: sit722devopsteddy-rg
-      AKS_NAME: sit722devopsteddy-aks
+
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Azure Login
@@ -138,23 +129,20 @@ jobs:
         run: |
           echo "🔗 Setting up dynamic port forwarding for integration tests..."
 
-          # Services to test
           SERVICES=("product-service" "order-service" "frontend")
           START_PORT=18000
           declare -A PORT_MAPPING
 
-          # Dynamically forward each service
           for service in "${SERVICES[@]}"; do
-            SERVICE_PORT=$(kubectl get svc $service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')
+            SERVICE_PORT=$(kubectl get svc $service -n ${{ github.event.inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')
             LOCAL_PORT=$START_PORT
             START_PORT=$((START_PORT + 1))
 
             echo "🚀 Forwarding $service: localhost:$LOCAL_PORT -> service port $SERVICE_PORT"
-            kubectl port-forward svc/$service $LOCAL_PORT:$SERVICE_PORT -n ${{ inputs.NAMESPACE }} &
+            kubectl port-forward svc/$service $LOCAL_PORT:$SERVICE_PORT -n ${{ github.event.inputs.NAMESPACE }} &
             PORT_MAPPING[$service]=$LOCAL_PORT
           done
 
-          # Wait for services to be healthy
           for service in "${SERVICES[@]}"; do
             PORT=${PORT_MAPPING[$service]}
             echo "⏳ Waiting for $service on localhost:$PORT..."
@@ -163,13 +151,11 @@ jobs:
                 echo "✅ $service is responding at localhost:$PORT"
                 break
               else
-                echo "Waiting for $service on localhost:$PORT..."
                 sleep 3
               fi
             done
           done
 
-          # Export environment variables for tests
           export PRODUCT_API_IP="http://localhost:${PORT_MAPPING["product-service"]}"
           export ORDER_API_IP="http://localhost:${PORT_MAPPING["order-service"]}"
           export FRONTEND_URL="http://localhost:${PORT_MAPPING["frontend"]}"
@@ -184,21 +170,20 @@ jobs:
           echo "🧹 Cleaning up port-forwards..."
           pkill -f "kubectl port-forward" || true
 
-          if [ "${{ inputs.STAGING }}" = "true" ]; then
+          if [ "${{ github.event.inputs.STAGING }}" = "true" ]; then
             echo "🗑️ Deleting namespace..."
-            kubectl delete namespace ${{ inputs.NAMESPACE }} || echo "Namespace already deleted"
-          fi
+            kubectl delete namespace ${{ github.event.inputs.NAMESPACE }} || echo "Namespace already deleted"
 
   notify-email:
     needs: post-deploy-integration-tests
     uses: ./.github/workflows/plugin-send-email.yml
     with:
       email_to: "teddyhinyp@gmail.com"
-      email_subject: ${{ needs.deploy.result == 'success' && 'Production Deployment Succeeded' || 'Production Deployment Failed' }}
+      email_subject: ${{ needs.deploy.result == 'success' && 'Deployment Succeeded' || 'Deployment Failed' }}
       email_body: |
-        Deployment to namespace ${{ inputs.NAMESPACE }} has completed.
+        Deployment to namespace ${{ github.event.inputs.NAMESPACE }} has completed.
         Status: ${{ needs.deploy.result }}
-        Image Tag: ${{ inputs.IMAGE_TAG }}
+        Image Tag: ${{ github.event.inputs.IMAGE_TAG }}
         Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     secrets:
       EMAIL_USER: ${{ secrets.EMAIL_USER }}
