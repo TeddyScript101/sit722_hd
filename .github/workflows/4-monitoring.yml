@@ -5,10 +5,10 @@ on:
     workflows: ["Stage3 - Production Deployment"]
     types:
       - completed
+  workflow_dispatch: # <-- allows manual triggering
 
 jobs:
   deploy-monitoring:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     env:
@@ -29,17 +29,32 @@ jobs:
           az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_NAME
           kubectl cluster-info
 
+      - name: Ensure monitoring namespace exists
+        run: |
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Deploy Prometheus
         run: |
           echo "📦 Deploying Prometheus..."
-          kubectl apply -f k8s/monitoring/prometheus/
+          kubectl apply -f k8s/prometheus-configmap.yaml
+          kubectl apply -f k8s/prometheus-rbac.yaml
+          kubectl apply -f k8s/prometheus-deployment.yaml
 
       - name: Deploy Grafana
         run: |
           echo "📦 Deploying Grafana..."
-          kubectl apply -f k8s/monitoring/grafana/
+          kubectl apply -f k8s/grafana-deployment.yaml
 
       - name: Verify Monitoring Services
         run: |
           kubectl get pods -n monitoring
           kubectl get svc -n monitoring
+
+      - name: Cleanup on Failure
+        if: ${{ failure() }}
+        run: |
+          echo "⚠️ Deployment failed. Cleaning up monitoring resources..."
+          kubectl delete -f k8s/prometheus-deployment.yaml --ignore-not-found
+          kubectl delete -f k8s/prometheus-rbac.yaml --ignore-not-found
+          kubectl delete -f k8s/prometheus-configmap.yaml --ignore-not-found
+          kubectl delete -f k8s/grafana-deployment.yaml --ignore-not-found
