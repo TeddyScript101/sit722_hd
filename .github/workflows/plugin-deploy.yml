@@ -87,7 +87,7 @@ jobs:
             --image=$ACR_LOGIN_SERVER/product_service:${{ inputs.IMAGE_TAG }} \
             -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl expose deployment product-service --type=$TYPE --port=8000 --target-port=8000 -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl label deployment product-service app=product-service -n ${{ inputs.NAMESPACE }} --overwrite
+          kubectl label deployment product-service app=product-service -n ${{ inputs.NAMESPFACE }} --overwrite
           kubectl set image deployment/product-service *=$ACR_LOGIN_SERVER/product_service:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
 
           # Order Service
@@ -101,8 +101,9 @@ jobs:
       - name: Wait for Backend Deployments
         run: |
           for dep in $(kubectl get deployments -n ${{ inputs.NAMESPACE }} -o jsonpath='{.items[*].metadata.name}'); do
+            POD_LABEL=$(kubectl get deployment $dep -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.selector.matchLabels.app}')
             kubectl rollout status deployment/$dep -n ${{ inputs.NAMESPACE }} --timeout=300s
-            kubectl wait --for=condition=Ready pod -l app=$dep -n ${{ inputs.NAMESPACE }} --timeout=180s
+            kubectl wait --for=condition=Ready pod -l app=$POD_LABEL -n ${{ inputs.NAMESPACE }} --timeout=180s
           done
 
       # -------------------------------
