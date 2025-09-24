@@ -36,7 +36,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -124,9 +123,6 @@ jobs:
               echo "ℹ️ $svc is ClusterIP only"
             fi
           done
-
-
-
 
   post-deploy-integration-tests:
     needs: deploy
