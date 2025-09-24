@@ -142,16 +142,22 @@ jobs:
           for service in "${!SERVICES[@]}"; do
             LOCAL_PORT=${SERVICES[$service]%:*}
             TARGET_PORT=${SERVICES[$service]#*:}
-            echo "🚀 Starting port-forward for $service $LOCAL_PORT:$TARGET_PORT"
+            echo "🚀 Forwarding $service: localhost:$LOCAL_PORT -> service port $TARGET_PORT"
             kubectl port-forward svc/$service $LOCAL_PORT:$TARGET_PORT -n ${{ inputs.NAMESPACE }} &
           done
 
-          # Wait until ports are reachable
-          for port in 8000 8001 8080; do
-            echo "⏳ Waiting for port $port..."
+          declare -A PORTS=( ["product-service"]="8000" ["order-service"]="8001" ["frontend"]="8080" )
+          for service in "${!PORTS[@]}"; do
+            PORT=${PORTS[$service]}
+            echo "⏳ Waiting for $service on localhost:$PORT..."
             for i in {1..20}; do
-              nc -z localhost $port && break
-              sleep 2
+              if curl -s http://localhost:$PORT/health; then
+                echo "✅ $service is responding at localhost:$PORT"
+                break
+              else
+                echo "Waiting for $service on localhost:$PORT..."
+                sleep 3
+              fi
             done
           done
 
