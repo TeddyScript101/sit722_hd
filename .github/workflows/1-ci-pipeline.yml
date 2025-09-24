@@ -6,6 +6,9 @@ on:
     branches: [staging]
 
 jobs:
+  # ---------------------------------------
+  # 1️⃣ Test Backend Services
+  # ---------------------------------------
   test-backend-services:
     runs-on: ubuntu-latest
     services:
@@ -49,40 +52,39 @@ jobs:
             sleep 2
           done
 
-      - name: Create databases if they don't exist
+      - name: Create databases if missing
         run: |
-          psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'orders'" | grep -q 1 || psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres -c "CREATE DATABASE orders;"
-          psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'products'" | grep -q 1 || psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres -c "CREATE DATABASE products;"
+          for db in orders products; do
+            psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres \
+              -tc "SELECT 1 FROM pg_database WHERE datname = '$db'" | grep -q 1 || \
+              psql postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/postgres \
+              -c "CREATE DATABASE $db;"
+          done
 
-      - name: Install dependencies for ${{ matrix.service }}
+      - name: Install dependencies
         run: |
           cd backend/${{ matrix.service }}
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Set DATABASE_URL for service
+      - name: Set DATABASE_URL
         run: |
           if [ "${{ matrix.service }}" = "order_service" ]; then
-            export DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/orders
-          elif [ "${{ matrix.service }}" = "product_service" ]; then
-            export DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/products
+            echo "DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/orders" >> $GITHUB_ENV
+          else
+            echo "DATABASE_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/products" >> $GITHUB_ENV
           fi
-          echo "DATABASE_URL=$DATABASE_URL" >> $GITHUB_ENV
 
-      - name: Run tests for ${{ matrix.service }}
+      - name: Run tests
         run: |
-          echo "🟢 Starting tests for ${{ matrix.service }}..."
           cd backend/${{ matrix.service }}
           python -m pytest tests/ -v
-          if [ $? -eq 0 ]; then
-            echo "✅ All tests passed for ${{ matrix.service }}"
-          else
-            echo "❌ Some tests failed for ${{ matrix.service }}"
-            exit 1
-          fi
 
-  build-and-scout:
+  # ---------------------------------------
+  # 2️⃣ Build Docker Images
+  # ---------------------------------------
+  build-docker-images:
     needs: test-backend-services
     runs-on: ubuntu-latest
     strategy:
@@ -102,7 +104,7 @@ jobs:
         run: |
           echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
 
-      - name: Build Docker image for ${{ matrix.service }}
+      - name: Build Docker image
         run: |
           if [ "${{ matrix.service }}" = "frontend" ]; then
             cd frontend
@@ -111,14 +113,24 @@ jobs:
           fi
           docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} .
 
-      - name: Scan Docker image with Docker Scout
-        uses: ./.github/workflows/plugin-docker-scout-scan.yml
-        with:
-          IMAGE_NAME: ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}
-          IMAGE_TAG: ${{ github.sha }}
+  # ---------------------------------------
+  # 3️⃣ Scan Docker Images (Reusable Workflow)
+  # ---------------------------------------
+  docker-scout-scan:
+    needs: build-docker-images
+    uses: ./.github/workflows/plugin-docker-scout-scan.yml
+    strategy:
+      matrix:
+        service: [order_service, product_service, frontend]
+    with:
+      IMAGE_NAME: ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}
+      IMAGE_TAG: ${{ github.sha }}
 
+  # ---------------------------------------
+  # 4️⃣ Push Docker Images to ACR
+  # ---------------------------------------
   push-to-acr:
-    needs: build-and-scout
+    needs: docker-scout-scan
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -132,13 +144,15 @@ jobs:
         run: |
           echo ${{ secrets.ACR_PASSWORD }} | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
-      - name: Push Docker image to ACR
+      - name: Push Docker image
         run: |
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }}
           docker tag ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:${{ github.sha }} ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:latest
           docker push ${{ secrets.ACR_LOGIN_SERVER }}/${{ matrix.service }}:latest
-          echo "✅ Built, scanned, and pushed ${{ matrix.service }} with tags: ${{ github.sha }} and latest"
 
+  # ---------------------------------------
+  # 5️⃣ Notify via Email on Failure
+  # ---------------------------------------
   notify-email:
     needs: push-to-acr
     if: ${{ needs.push-to-acr.result != 'success' }}
