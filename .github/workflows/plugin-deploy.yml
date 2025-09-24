@@ -51,6 +51,10 @@ jobs:
       - name: Create Namespace
         run: kubectl create namespace ${{ inputs.NAMESPACE }} || echo "Namespace exists"
 
+      - name: Apply ConfigMaps
+        run: |
+          kubectl apply -f k8s/configmaps.yaml -n ${{ inputs.NAMESPACE }}
+
       # -------------------------------
       # Deploy Databases
       # -------------------------------
