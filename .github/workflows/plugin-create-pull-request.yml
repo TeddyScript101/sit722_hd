@@ -11,6 +11,16 @@ on:
         description: "Target branch for PR"
         required: true
         default: "main"
+  workflow_call:
+    inputs:
+      SOURCE_BRANCH:
+        description: "From branch for PR"
+        required: true
+        type: string
+      TARGET_BRANCH:
+        description: "Target branch for PR"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -20,8 +30,8 @@ jobs:
   create-traditional-pr:
     runs-on: ubuntu-latest
     env:
-      SOURCE_BRANCH: ${{ github.event.inputs.SOURCE_BRANCH }}
-      TARGET_BRANCH: ${{ github.event.inputs.TARGET_BRANCH }}
+      SOURCE_BRANCH: ${{ github.event.inputs.SOURCE_BRANCH || inputs.SOURCE_BRANCH }}
+      TARGET_BRANCH: ${{ github.event.inputs.TARGET_BRANCH || inputs.TARGET_BRANCH }}
 
     steps:
       - name: Checkout repo

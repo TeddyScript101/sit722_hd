@@ -8,7 +8,7 @@ on:
 
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.head_branch == 'staging' }}
+    if: ${{ github.event.workflow_run.head_branch == 'staging' && github.event.workflow_run.conclusion == 'success' }}
     uses: ./.github/workflows/plugin-deploy.yml
     with:
       NAMESPACE: staging-${{ github.run_id }}
@@ -16,7 +16,7 @@ jobs:
       STAGING: true
 
   create-pr:
-    if: ${{ github.event.workflow_run.head_branch == 'staging' }}
+    if: ${{ github.event.workflow_run.head_branch == 'staging' && github.event.workflow_run.conclusion == 'success' }}
     needs: deploy
     uses: ./.github/workflows/plugin-create-pull-request.yml
     with:
