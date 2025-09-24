@@ -106,7 +106,7 @@ jobs:
       - name: Wait for Frontend Deployment
         run: kubectl rollout status deployment/frontend -n ${{ inputs.NAMESPACE }} --timeout=300s
 
-  post-deploy-integration-tests:
+    post-deploy-integration-tests:
     needs: deploy
     runs-on: ubuntu-latest
     env:
@@ -136,22 +136,27 @@ jobs:
 
       - name: Run API Integration Tests
         run: |
-          echo "🔗 Setting up port forwarding for integration tests..."
+          echo "🔗 Setting up dynamic port forwarding for integration tests..."
 
+          # Services to test
           SERVICES=("product-service" "order-service" "frontend")
+          START_PORT=18000
+          declare -A PORT_MAPPING
 
+          # Dynamically forward each service
           for service in "${SERVICES[@]}"; do
-            # Get the target port of the service from Kubernetes
-            TARGET_PORT=$(kubectl get svc $service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].targetPort}')
-            LOCAL_PORT=$(kubectl get svc $service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')
+            SERVICE_PORT=$(kubectl get svc $service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')
+            LOCAL_PORT=$START_PORT
+            START_PORT=$((START_PORT + 1))
 
-            echo "🚀 Forwarding $service: localhost:$LOCAL_PORT -> service target port $TARGET_PORT"
-            kubectl port-forward svc/$service $LOCAL_PORT:$TARGET_PORT -n ${{ inputs.NAMESPACE }} &
+            echo "🚀 Forwarding $service: localhost:$LOCAL_PORT -> service port $SERVICE_PORT"
+            kubectl port-forward svc/$service $LOCAL_PORT:$SERVICE_PORT -n ${{ inputs.NAMESPACE }} &
+            PORT_MAPPING[$service]=$LOCAL_PORT
           done
 
-          # Wait for services to become healthy
+          # Wait for services to be healthy
           for service in "${SERVICES[@]}"; do
-            PORT=$(kubectl get svc $service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')
+            PORT=${PORT_MAPPING[$service]}
             echo "⏳ Waiting for $service on localhost:$PORT..."
             for i in {1..20}; do
               if curl -s http://localhost:$PORT/health; then
@@ -164,24 +169,25 @@ jobs:
             done
           done
 
-          export PRODUCT_API_IP="http://localhost:$(kubectl get svc product-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')"
-          export ORDER_API_IP="http://localhost:$(kubectl get svc order-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')"
-          export FRONTEND_URL="http://localhost:$(kubectl get svc frontend -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.ports[0].port}')"
+          # Export environment variables for tests
+          export PRODUCT_API_IP="http://localhost:${PORT_MAPPING["product-service"]}"
+          export ORDER_API_IP="http://localhost:${PORT_MAPPING["order-service"]}"
+          export FRONTEND_URL="http://localhost:${PORT_MAPPING["frontend"]}"
 
           echo "🧪 Running integration tests..."
           cd util
           npm test --testTimeout=30000 || true
 
-      # - name: Cleanup Port-Forwards and Namespace
-      #   if: ${{ always() }}
-      #   run: |
-      #     echo "🧹 Cleaning up port-forwards..."
-      #     pkill -f "kubectl port-forward" || true
+      - name: Cleanup Port-Forwards and Namespace
+        if: ${{ always() }}
+        run: |
+          echo "🧹 Cleaning up port-forwards..."
+          pkill -f "kubectl port-forward" || true
 
-      #     if [ "${{ inputs.STAGING }}" = "true" ]; then
-      #       echo "🗑️ Deleting namespace..."
-      #       kubectl delete namespace ${{ inputs.NAMESPACE }} || echo "Namespace already deleted"
-      #     fi
+          if [ "${{ inputs.STAGING }}" = "true" ]; then
+            echo "🗑️ Deleting namespace..."
+            kubectl delete namespace ${{ inputs.NAMESPACE }} || echo "Namespace already deleted"
+          fi
 
   notify-email:
     needs: post-deploy-integration-tests
