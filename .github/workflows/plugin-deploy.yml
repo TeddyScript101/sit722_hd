@@ -18,8 +18,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      RESOURCE_GROUP: teddysit722Week10
-      AKS_NAME: aksteddy722Week10
+      RESOURCE_GROUP: sit722devopsteddy-rg
+      AKS_NAME: sit722devopsteddy-aks
       ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
 
     steps:
