@@ -53,44 +53,34 @@ jobs:
 
       - name: Deploy Backend Services
         run: |
-          # Deploy Product Service
-          SERVICE_PORT=8000
           TYPE=LoadBalancer
           if [ "${{ inputs.STAGING }}" = "true" ]; then TYPE=ClusterIP; fi
 
+          # Product Service
           kubectl create deployment product-service \
             --image=$ACR_LOGIN_SERVER/product_service:${{ inputs.IMAGE_TAG }} \
             -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
           kubectl expose deployment product-service \
             --type=$TYPE \
-            --port=$SERVICE_PORT \
-            --target-port=8000 \
-            --name=product-service \
-            -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
+            --port=8000 --target-port=8000 \
+            --name=product-service -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl label deployment product-service app=product-service -n ${{ inputs.NAMESPACE }} --overwrite
           kubectl set image deployment/product-service *=$ACR_LOGIN_SERVER/product_service:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
 
-          # Deploy Order Service  
-          SERVICE_PORT=8001
+          # Order Service
           kubectl create deployment order-service \
             --image=$ACR_LOGIN_SERVER/order_service:${{ inputs.IMAGE_TAG }} \
             -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
           kubectl expose deployment order-service \
             --type=$TYPE \
-            --port=$SERVICE_PORT \
-            --target-port=8000 \
-            --name=order-service \
-            -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
+            --port=8001 --target-port=8000 \
+            --name=order-service -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl label deployment order-service app=order-service -n ${{ inputs.NAMESPACE }} --overwrite
           kubectl set image deployment/order-service *=$ACR_LOGIN_SERVER/order_service:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
 
       - name: Wait for Backend Deployments
         run: |
-          for dep in $(kubectl get deployments -n ${{ inputs.NAMESPACE }} -o jsonpath='{.items[*].metadata.name}'); do
+          for dep in product-service order-service; do
             kubectl rollout status deployment/$dep -n ${{ inputs.NAMESPACE }} --timeout=300s
             kubectl wait --for=condition=Ready pod -l app=$dep -n ${{ inputs.NAMESPACE }} --timeout=180s
           done
@@ -107,14 +97,9 @@ jobs:
           kubectl create deployment frontend \
             --image=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} \
             -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
           kubectl expose deployment frontend \
-            --port=80 \
-            --target-port=80 \
-            --type=$TYPE \
-            --name=frontend \
-            -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-
+            --port=80 --target-port=80 --type=$TYPE \
+            --name=frontend -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl label deployment frontend app=frontend -n ${{ inputs.NAMESPACE }} --overwrite
           kubectl set image deployment/frontend *=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
 
@@ -163,94 +148,63 @@ jobs:
           cd util
           npm ci
 
-      - name: Wait for Services to be Ready
+      - name: Wait for Pods Ready Before Port Forward
         run: |
           NAMESPACE="${{ inputs.NAMESPACE }}"
           for svc in product-service order-service frontend; do
-            echo "🔍 Checking pods for service: $svc"
-            kubectl get pods -n $NAMESPACE -l app=$svc
-            POD=$(kubectl get pods -n $NAMESPACE -l app=$svc -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-            if [ -n "$POD" ]; then
-              echo "⏳ Waiting for pod $POD to be ready..."
-              kubectl wait --for=condition=Ready pod/$POD -n $NAMESPACE --timeout=180s
-            else
-              echo "❌ No pods found for service $svc"
-              kubectl get pods -n $NAMESPACE
-            fi
+            echo "⏳ Waiting for pods of $svc to be ready..."
+            kubectl wait --for=condition=Ready pod -l app=$svc -n $NAMESPACE --timeout=180s
           done
 
-      - name: Debug Pod and Service Status
-        run: |
-          NAMESPACE="${{ inputs.NAMESPACE }}"
-          echo "🔍 Debugging services and pods..."
-          kubectl get svc -n $NAMESPACE
-          kubectl get pods -n $NAMESPACE -o wide
-          kubectl get endpoints -n $NAMESPACE
-
-      - name: Setup Port Forwarding with Better Error Handling
+      - name: Setup Port Forwarding and Log URLs
         run: |
           NAMESPACE="${{ inputs.NAMESPACE }}"
 
-          # Function to setup port forward with retry
           setup_port_forward() {
             local service=$1
             local local_port=$2
-            local service_port=$3
-            
-            echo "🚀 Setting up port forward for $service: localhost:$local_port -> service:$service_port"
-            
-            # Kill any existing port forwards on this port
+            local target_port=$3
+
+            echo "🚀 Setting up port forward for $service: localhost:$local_port -> service:$target_port"
             pkill -f "port-forward.*:$local_port" || true
-            
-            # Start port forwarding in background
-            kubectl port-forward svc/$service $local_port:$service_port -n $NAMESPACE &
+            kubectl port-forward svc/$service $local_port:$target_port -n $NAMESPACE &
             PID=$!
-            
-            # Wait and test connection
-            sleep 3
+            sleep 5
             if kill -0 $PID 2>/dev/null; then
-              echo "✅ Port forward for $service established (PID: $PID)"
+              echo "✅ Port forward established for $service (PID: $PID)"
+              echo "🔗 Access $service at http://localhost:$local_port"
             else
-              echo "❌ Port forward for $service failed"
+              echo "❌ Port forward failed for $service"
               return 1
             fi
           }
 
-          # Setup port forwards with correct service ports
-          setup_port_forward "product-service" "18000" "8000"
-          setup_port_forward "order-service" "18001" "8001" 
-          setup_port_forward "frontend" "18002" "80"
-
-          echo "⏳ Waiting 10 seconds for port forwards to stabilize..."
-          sleep 10
+          # Setup forwards using service port
+          setup_port_forward "product-service" 18000 8000
+          setup_port_forward "order-service" 18001 8001
+          setup_port_forward "frontend" 18002 80
 
       - name: Test Service Connectivity
         run: |
           echo "🧪 Testing service connectivity..."
-
-          test_endpoint() {
-            local name=$1
-            local url=$2
-            local expected_status=${3:-200}
-            
-            echo "Testing $name at $url"
+          for svc in product-service order-service frontend; do
+            LOCAL_PORT=$(( svc == "frontend" ? 18002 : (svc == "order-service" ? 18001 : 18000) ))
+            URL="http://localhost:$LOCAL_PORT"
+            echo "🔍 Testing $svc at $URL"
             for i in {1..10}; do
-              if curl -f -s --max-time 5 "$url" >/dev/null 2>&1; then
-                echo "✅ $name is responding"
-                return 0
+              if curl -f -s --max-time 5 "$URL" >/dev/null 2>&1; then
+                echo "✅ $svc is responding"
+                break
               else
-                echo "⏳ Attempt $i/10: $name not ready, retrying in 2s..."
-                sleep 2
+                echo "⏳ Attempt $i/10: $svc not ready, retrying in 3s..."
+                sleep 3
+              fi
+              if [ $i -eq 10 ]; then
+                echo "❌ $svc failed to respond after 10 attempts"
+                exit 1
               fi
             done
-            echo "❌ $name failed to respond after 10 attempts"
-            return 1
-          }
-
-          # Test each service
-          test_endpoint "Product Service Health" "http://localhost:18000/health"
-          test_endpoint "Order Service Health" "http://localhost:18001/health" 
-          test_endpoint "Frontend" "http://localhost:18002/" 200
+          done
 
       - name: Export Service URLs and Run Tests
         run: |
@@ -260,7 +214,7 @@ jobs:
 
           echo "🔗 Final service URLs:"
           echo "Product API: $PRODUCT_API_IP"
-          echo "Order API: $ORDER_API_IP" 
+          echo "Order API: $ORDER_API_IP"
           echo "Frontend: $FRONTEND_URL"
 
           cd util
