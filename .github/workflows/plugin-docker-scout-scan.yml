@@ -22,11 +22,14 @@ on:
         required: true
         type: string
     secrets:
-      DOCKERHUB_USERNAME:
-        description: "Docker Hub username"
+      ACR_LOGIN_SERVER:
+        description: "Azure Container Registry login server"
         required: true
-      DOCKERHUB_PASSWORD:
-        description: "Docker Hub password or access token"
+      ACR_USERNAME:
+        description: "ACR username"
+        required: true
+      ACR_PASSWORD:
+        description: "ACR password"
         required: true
 
 jobs:
@@ -36,9 +39,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Login to Docker Hub
+      - name: Login to ACR
         run: |
-          echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+          echo ${{ secrets.ACR_PASSWORD }} | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.ACR_USERNAME }} --password-stdin
 
       - name: Install Docker Scout CLI
         run: |
@@ -52,24 +55,27 @@ jobs:
         run: |
           IMAGE=${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}
           TAG=${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
-          echo "Pulling image: $IMAGE:$TAG"
-          docker pull $IMAGE:$TAG
+          FULL_IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/$IMAGE:$TAG
+          echo "Pulling image: $FULL_IMAGE"
+          docker pull $FULL_IMAGE
 
       - name: Scan Docker Image for CVEs
         run: |
           IMAGE=${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}
           TAG=${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
-          echo "Scanning image: $IMAGE:$TAG"
-          docker scout cves $IMAGE:$TAG | tee scout-results.txt
+          FULL_IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/$IMAGE:$TAG
+          echo "Scanning image: $FULL_IMAGE"
+          docker scout cves $FULL_IMAGE | tee scout-results.txt
 
       - name: Generate Summary Report
         run: |
           IMAGE=${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}
           TAG=${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
+          FULL_IMAGE=${{ secrets.ACR_LOGIN_SERVER }}/$IMAGE:$TAG
 
           echo "# 🔍 Docker Scout Security Scan Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`$IMAGE:$TAG\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`$FULL_IMAGE\`" >> $GITHUB_STEP_SUMMARY
           echo "**Scan Date:** $(date)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
