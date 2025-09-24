@@ -122,8 +122,73 @@ jobs:
 
       - name: Run API integration tests
         run: |
+          echo "🔗 Setting up port forwarding for integration tests..."
+
+          # Port forward all deployed services
+          kubectl port-forward service/product-service 8000:80 -n ${{ inputs.NAMESPACE }} &
+          PRODUCT_PF_PID=$!
+
+          kubectl port-forward service/order-service 8001:80 -n ${{ inputs.NAMESPACE }} &
+          ORDER_PF_PID=$!
+
+          kubectl port-forward service/frontend 8080:80 -n ${{ inputs.NAMESPACE }} &
+          FRONTEND_PF_PID=$!
+
+          echo "Port forwarding PIDs: Product=$PRODUCT_PF_PID, Order=$ORDER_PF_PID, Frontend=$FRONTEND_PF_PID"
+
+          # Wait for port forwards to establish
+          echo "⏳ Waiting for port forwards to establish..."
+          sleep 15
+
+          # Verify services are accessible
+          echo "🔍 Verifying service accessibility..."
+
+          # Test product service
+          if curl -f -s http://localhost:8000/health >/dev/null 2>&1; then
+            echo "✅ Product service accessible on localhost:8000"
+          else
+            echo "⚠️ Product service not accessible"
+          fi
+
+          # Test order service
+          if curl -f -s http://localhost:8001/health >/dev/null 2>&1; then
+            echo "✅ Order service accessible on localhost:8001"
+          else
+            echo "⚠️ Order service not accessible"
+          fi
+
+          # Test frontend
+          if curl -f -s http://localhost:8080 >/dev/null 2>&1; then
+            echo "✅ Frontend accessible on localhost:8080"
+          else
+            echo "⚠️ Frontend not accessible"
+          fi
+
+          # Set environment variables for tests
+          export PRODUCT_API_IP="http://localhost:8000"
+          export ORDER_API_IP="http://localhost:8001"
+          export FRONTEND_URL="http://localhost:8080"
+
+          echo "🧪 Running integration tests..."
           cd util
-          npm test --testTimeout=30000
+
+          # Run tests with extended timeout
+          npm test --testTimeout=30000 || {
+            echo "❌ Integration tests failed"
+            # Cleanup on failure
+            kill $PRODUCT_PF_PID $ORDER_PF_PID $FRONTEND_PF_PID 2>/dev/null || true
+            pkill -f "kubectl port-forward" 2>/dev/null || true
+            exit 1
+          }
+
+          echo "✅ Integration tests completed successfully"
+
+          # Cleanup port forwarding
+          echo "🧹 Cleaning up port forwarding..."
+          kill $PRODUCT_PF_PID $ORDER_PF_PID $FRONTEND_PF_PID 2>/dev/null || true
+          pkill -f "kubectl port-forward" 2>/dev/null || true
+
+          echo "✅ Port forwarding cleanup complete"
 
   notify-email:
     needs: deploy

@@ -3,6 +3,9 @@ const axios = require('axios');
 const productApi = process.env.PRODUCT_API_IP || "http://localhost:8000";
 const orderApi = process.env.ORDER_API_IP || "http://localhost:8001";
 
+console.log("Using Product API at:", productApi);
+console.log("Using Order API at:", orderApi);
+
 describe('Production API Integration Tests', () => {
     test('Product service health', async () => {
         const res = await axios.get(`${productApi}/health`);
