@@ -125,6 +125,9 @@ jobs:
             fi
           done
 
+
+
+
   post-deploy-integration-tests:
     needs: deploy
     runs-on: ubuntu-latest
@@ -150,59 +153,47 @@ jobs:
           cd util
           npm ci
 
-      - name: Run API Integration Tests (Debug)
+      - name: Wait for Services to be Ready
         run: |
-          echo "🔗 Setting up port forwarding for integration tests..."
-
-          # Map of services and local ports
-          declare -A SERVICES_PORTS=( ["product-service"]=18000 ["order-service"]=18001 ["frontend"]=18002 )
           NAMESPACE="${{ inputs.NAMESPACE }}"
-
-          # Start port-forwards
-          for service in "${!SERVICES_PORTS[@]}"; do
-            LOCAL_PORT=${SERVICES_PORTS[$service]}
-            echo "🚀 Forwarding $service: localhost:$LOCAL_PORT -> service port 80"
-
-            kubectl port-forward svc/$service $LOCAL_PORT:80 -n $NAMESPACE &
+          for svc in product-service order-service frontend; do
+            POD=$(kubectl get pods -n $NAMESPACE -l app=$(echo $svc | sed 's/_/-/g') -o jsonpath='{.items[0].metadata.name}')
+            echo "⏳ Waiting for pod $POD to be ready..."
+            kubectl wait --for=condition=Ready pod/$POD -n $NAMESPACE --timeout=180s
           done
 
-          # Wait a few seconds to let port-forwarding establish
-          echo "⏳ Waiting for port-forward to be ready..."
+      - name: Setup Port Forwarding
+        run: |
+          NAMESPACE="${{ inputs.NAMESPACE }}"
+          kubectl port-forward svc/product-service 18000:80 -n $NAMESPACE &
+          kubectl port-forward svc/order-service 18001:80 -n $NAMESPACE &
+          kubectl port-forward svc/frontend 18002:80 -n $NAMESPACE &
+          echo "⏳ Waiting 5 seconds for port-forward to establish..."
           sleep 5
 
-          # Verify services are responding
-          for service in "product-service" "order-service" "frontend"; do
-            LOCAL_PORT=${SERVICES_PORTS[$service]}
-            echo "⏳ Checking $service health at localhost:$LOCAL_PORT/health..."
-            for i in {1..10}; do
-              if curl -s http://localhost:$LOCAL_PORT/health; then
-                echo "✅ $service is responding at localhost:$LOCAL_PORT"
-                break
-              else
-                echo "🕒 Waiting for $service on localhost:$LOCAL_PORT..."
-                sleep 3
-              fi
-            done
-          done
+      - name: Export Service URLs
+        run: |
+          export PRODUCT_API_IP="http://localhost:18000"
+          export ORDER_API_IP="http://localhost:18001"
+          export FRONTEND_URL="http://localhost:18002"
+          echo "🔗 Services ready:"
+          echo "Product API: $PRODUCT_API_IP"
+          echo "Order API: $ORDER_API_IP"
+          echo "Frontend: $FRONTEND_URL"
 
-          # Export environment variables for tests
-          export PRODUCT_API_IP="http://localhost:${SERVICES_PORTS["product-service"]}"
-          export ORDER_API_IP="http://localhost:${SERVICES_PORTS["order-service"]}"
-          export FRONTEND_URL="http://localhost:${SERVICES_PORTS["frontend"]}"
-
-          echo "🧪 Running integration tests..."
+      - name: Run API Integration Tests
+        run: |
           cd util
           npm test --testTimeout=30000 || true
 
-          # Debug: list active port-forwards
-          echo "🔍 Active port-forward processes:"
-          ps aux | grep "kubectl port-forward"
+      - name: Debug: List Active Port-Forwards
+        run: ps aux | grep "kubectl port-forward"
 
   notify-email:
     needs: post-deploy-integration-tests
     uses: ./.github/workflows/plugin-send-email.yml
     with:
-      email_to: "teddyhinyp@gmail.com"
+      email_to: "teddyhiny@gmail.com"
       email_subject: ${{ needs.deploy.result == 'success' && 'Deployment Succeeded' || 'Deployment Failed' }}
       email_body: |
         Deployment to namespace ${{ inputs.NAMESPACE }} has completed.
