@@ -141,14 +141,8 @@ jobs:
         run: |
           echo "🔗 Setting up port forwarding for integration tests..."
 
-          # Start port forwarding in background
+          # Start port forwarding in background for services
           for service in product-service order-service frontend; do
-            POD=$(kubectl get pod -n ${{ inputs.NAMESPACE }} -l app=$service -o jsonpath="{.items[0].metadata.name}")
-            if [ -z "$POD" ]; then
-              echo "❌ No pod found for service $service"
-              continue
-            fi
-            
             PORT=""
             LOCAL_PORT=""
             case $service in
@@ -156,9 +150,9 @@ jobs:
               order-service) LOCAL_PORT=8001; PORT=80 ;;
               frontend) LOCAL_PORT=8080; PORT=80 ;;
             esac
-            
-            echo "🚀 Starting port-forward for $service: $POD on $LOCAL_PORT:$PORT"
-            kubectl port-forward pod/$POD $LOCAL_PORT:$PORT -n ${{ inputs.NAMESPACE }} &
+
+            echo "🚀 Starting port-forward for $service svc on $LOCAL_PORT:$PORT"
+            kubectl port-forward svc/$service $LOCAL_PORT:$PORT -n ${{ inputs.NAMESPACE }} &
             
             # Store the PID for cleanup
             PID=$!
@@ -202,17 +196,17 @@ jobs:
             echo "✅ Skipping cleanup for production success."
           fi
 
-  notify-email:
-    needs: post-deploy-integration-tests
-    uses: ./.github/workflows/plugin-send-email.yml
-    with:
-      email_to: "teddyhinyp@gmail.com"
-      email_subject: ${{ needs.deploy.result == 'success' && 'Production Deployment Succeeded' || 'Production Deployment Failed' }}
-      email_body: |
-        Deployment to namespace ${{ github.event.inputs.NAMESPACE }} has completed.
-        Status: ${{ needs.deploy.result }}
-        Image Tag: ${{ github.event.inputs.IMAGE_TAG }}
-        Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-    secrets:
-      EMAIL_USER: ${{ secrets.EMAIL_USER }}
-      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+notify-email:
+  needs: post-deploy-integration-tests
+  uses: ./.github/workflows/plugin-send-email.yml
+  with:
+    email_to: "teddyhinyp@gmail.com"
+    email_subject: ${{ needs.deploy.result == 'success' && 'Production Deployment Succeeded' || 'Production Deployment Failed' }}
+    email_body: |
+      Deployment to namespace ${{ github.event.inputs.NAMESPACE }} has completed.
+      Status: ${{ needs.deploy.result }}
+      Image Tag: ${{ github.event.inputs.IMAGE_TAG }}
+      Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  secrets:
+    EMAIL_USER: ${{ secrets.EMAIL_USER }}
+    EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
