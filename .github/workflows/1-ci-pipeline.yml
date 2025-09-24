@@ -189,9 +189,12 @@ jobs:
   # ---------------------------------------
   notify-email:
     needs: push-to-acr
-    if: ${{ needs.push-to-acr.result != 'success' }}
+    if: ${{ failure() }}
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Trigger Email Notification
         uses: ./.github/workflows/send-email.yml
         with:
