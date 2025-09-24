@@ -22,89 +22,78 @@ on:
         required: true
         type: string
     secrets:
-      ACR_LOGIN_SERVER:
-        description: "Azure Container Registry login server"
-        required: true
       DOCKERHUB_USERNAME:
         description: "Docker Hub username"
         required: true
       DOCKERHUB_PASSWORD:
-        description: "Docker Hub password"
+        description: "Docker Hub password or access token"
         required: true
 
 jobs:
   scout-scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Login to ACR
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Login to Docker Hub
         run: |
-          echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login ${{ secrets.ACR_LOGIN_SERVER }} -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+          echo ${{ secrets.DOCKERHUB_PASSWORD }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
 
       - name: Install Docker Scout CLI
         run: |
-          # Install Docker Scout CLI
           curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh | sh -s --
-          # Add to PATH
           echo "$HOME/.docker/scout" >> $GITHUB_PATH
 
       - name: Verify Docker Scout Installation
-        run: |
-          docker scout version
+        run: docker scout version
 
       - name: Pull Docker Image
         run: |
-          echo "Pulling image: ${{ secrets.ACR_LOGIN_SERVER }}/${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}"
-          docker pull ${{ secrets.ACR_LOGIN_SERVER }}/${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
+          IMAGE=${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}
+          TAG=${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
+          echo "Pulling image: $IMAGE:$TAG"
+          docker pull $IMAGE:$TAG
 
       - name: Scan Docker Image for CVEs
         run: |
-          echo "Scanning image: ${{ secrets.ACR_LOGIN_SERVER }}/${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}"
-
-          # Run basic CVE scan and save output
-          docker scout cves ${{ secrets.ACR_LOGIN_SERVER }}/${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }} | tee scout-results.txt
-
-          echo "✅ Docker Scout scan completed"
+          IMAGE=${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}
+          TAG=${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
+          echo "Scanning image: $IMAGE:$TAG"
+          docker scout cves $IMAGE:$TAG | tee scout-results.txt
 
       - name: Generate Summary Report
         run: |
+          IMAGE=${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}
+          TAG=${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}
+
           echo "# 🔍 Docker Scout Security Scan Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ secrets.ACR_LOGIN_SERVER }}/${{ github.event.inputs.IMAGE_NAME || inputs.IMAGE_NAME }}:${{ github.event.inputs.IMAGE_TAG || inputs.IMAGE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`$IMAGE:$TAG\`" >> $GITHUB_STEP_SUMMARY
           echo "**Scan Date:** $(date)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # Extract key information from scan results
           if grep -q "No vulnerabilities found" scout-results.txt; then
             echo "## ✅ Status: CLEAN" >> $GITHUB_STEP_SUMMARY
             echo "No vulnerabilities detected in this image." >> $GITHUB_STEP_SUMMARY
           else
             echo "## ⚠️ Status: VULNERABILITIES FOUND" >> $GITHUB_STEP_SUMMARY
-            
-            # Count vulnerabilities by severity
-            if grep -q "CRITICAL" scout-results.txt; then
-              CRITICAL_COUNT=$(grep -o "CRITICAL" scout-results.txt | wc -l)
-              echo "- 🔴 **Critical:** $CRITICAL_COUNT" >> $GITHUB_STEP_SUMMARY
-            fi
-            
-            if grep -q "HIGH" scout-results.txt; then
-              HIGH_COUNT=$(grep -o "HIGH" scout-results.txt | wc -l)
-              echo "- 🟠 **High:** $HIGH_COUNT" >> $GITHUB_STEP_SUMMARY
-            fi
-            
-            if grep -q "MEDIUM" scout-results.txt; then
-              MEDIUM_COUNT=$(grep -o "MEDIUM" scout-results.txt | wc -l)
-              echo "- 🟡 **Medium:** $MEDIUM_COUNT" >> $GITHUB_STEP_SUMMARY
-            fi
-            
-            if grep -q "LOW" scout-results.txt; then
-              LOW_COUNT=$(grep -o "LOW" scout-results.txt | wc -l)
-              echo "- 🔵 **Low:** $LOW_COUNT" >> $GITHUB_STEP_SUMMARY
-            fi
+            for SEV in CRITICAL HIGH MEDIUM LOW; do
+              COUNT=$(grep -o "$SEV" scout-results.txt | wc -l)
+              if [ "$COUNT" -gt 0 ]; then
+                case $SEV in
+                  CRITICAL) ICON="🔴";;
+                  HIGH)     ICON="🟠";;
+                  MEDIUM)   ICON="🟡";;
+                  LOW)      ICON="🔵";;
+                esac
+                echo "- $ICON **$SEV:** $COUNT" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 📋 Full Scan Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           cat scout-results.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
