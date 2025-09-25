@@ -11,6 +11,5 @@ data:
   AZURE_STORAGE_CONTAINER_NAME: product-images
   AZURE_SAS_TOKEN_EXPIRY_HOURS: "24"
 
-  # Fixed service URLs - remove the -hd suffix
   PRODUCT_SERVICE_URL: http://product-service:8000
   ORDER_SERVICE_URL: http://order-service:8001
