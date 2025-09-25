@@ -159,6 +159,10 @@ jobs:
           echo "Verifying URL injection:"
           grep -n "http://" "$FRONTEND_FILE" || echo "No HTTP URLs found in frontend file"
 
+      - name: Login to ACR
+        run: |
+          echo ${{ secrets.ACR_PASSWORD }} | docker login -u ${{ secrets.ACR_USERNAME }} --password-stdin ${{ secrets.ACR_LOGIN_SERVER }}
+
       - name: Build and push frontend image
         run: |
           docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/frontend:${{ inputs.IMAGE_TAG }} frontend
