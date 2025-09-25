@@ -113,6 +113,19 @@ jobs:
           kubectl rollout status deployment/order-service -n ${{ inputs.NAMESPACE }} --timeout=300s
           kubectl wait --for=condition=Ready pod -l app=order-service -n ${{ inputs.NAMESPACE }} --timeout=180s
 
+      - name: Inject Service URLs into Frontend
+        run: |
+          FRONTEND_FILE=frontend/main.js
+          PRODUCT_API_IP="http://$(kubectl get svc product-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.clusterIP}'):80"
+          ORDER_API_IP="http://$(kubectl get svc order-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.clusterIP}'):80"
+
+          echo "Injecting URLs into frontend:"
+          echo "Product API: $PRODUCT_API_IP"
+          echo "Order API: $ORDER_API_IP"
+
+          sed -i "s|_PRODUCT_API_URL_|$PRODUCT_API_IP|g" $FRONTEND_FILE
+          sed -i "s|_ORDER_API_URL_|$ORDER_API_IP|g" $FRONTEND_FILE
+
       - name: Deploy Frontend
         run: |
           kubectl apply -f k8s/frontend.yaml -n ${{ inputs.NAMESPACE }}
