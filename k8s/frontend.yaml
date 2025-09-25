@@ -26,7 +26,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend-hd # Service name matches
+  name: frontend
   labels:
     app: frontend
 spec:

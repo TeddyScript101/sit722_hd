@@ -3,7 +3,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: product-db-deployment-hd
+  name: product-db-deployment
   labels:
     app: product-db
 spec:
