@@ -247,7 +247,7 @@ jobs:
     uses: ./.github/workflows/plugin-send-email.yml
     with:
       email_to: "teddyhiny@gmail.com"
-      email_subject: ${{ needs.deploy.result == 'success' && 'Deployment Succeeded' || 'Deployment Failed' }}
+      email_subject: ${{ needs.post-deploy-integration-tests.result == 'success' && 'Deployment Succeeded' || 'Deployment Failed' }}
       email_body: |
         Deployment to namespace ${{ inputs.NAMESPACE }} has completed.
         Status: ${{ needs.deploy.result }}
