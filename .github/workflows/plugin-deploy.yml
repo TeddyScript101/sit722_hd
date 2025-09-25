@@ -51,13 +51,36 @@ jobs:
       - name: Create Namespace
         run: kubectl create namespace ${{ inputs.NAMESPACE }} || echo "Namespace exists"
 
-      - name: Apply ConfigMaps
+      # -------------------------------
+      # Update image tags in YAML files
+      # -------------------------------
+      - name: Update Image Tags
         run: |
-          kubectl apply -f k8s/configmaps.yaml -n ${{ inputs.NAMESPACE }}
+          # Update product service image
+          sed -i 's|image: teddysit722hd.azurecr.io/product_service:latest|image: ${{ secrets.ACR_LOGIN_SERVER }}/product_service:${{ inputs.IMAGE_TAG }}|g' k8s/product-service.yaml
+
+          # Update order service image  
+          sed -i 's|image: teddysit722hd.azurecr.io/order_service:latest|image: ${{ secrets.ACR_LOGIN_SERVER }}/order_service:${{ inputs.IMAGE_TAG }}|g' k8s/order-service.yaml
+
+          # Update frontend image
+          sed -i 's|image: teddysit722hd.azurecr.io/frontend:latest|image: ${{ secrets.ACR_LOGIN_SERVER }}/frontend:${{ inputs.IMAGE_TAG }}|g' k8s/frontend.yaml
+
+      # -------------------------------
+      # Update service types for staging
+      # -------------------------------
+      - name: Update Service Types for Staging
+        if: ${{ inputs.STAGING == true }}
+        run: |
+          # Change LoadBalancer to ClusterIP for staging
+          sed -i 's/type: LoadBalancer/type: ClusterIP/g' k8s/product-service.yaml
+          sed -i 's/type: LoadBalancer/type: ClusterIP/g' k8s/order-service.yaml  
+          sed -i 's/type: LoadBalancer/type: ClusterIP/g' k8s/frontend.yaml
+
+      - name: Apply ConfigMaps
+        run: kubectl apply -f k8s/configmaps.yaml -n ${{ inputs.NAMESPACE }}
 
       - name: Apply Secrets
-        run: |
-          kubectl apply -f k8s/secrets.yaml -n ${{ inputs.NAMESPACE }}
+        run: kubectl apply -f k8s/secrets.yaml -n ${{ inputs.NAMESPACE }}
 
       # -------------------------------
       # Deploy Databases
@@ -75,74 +98,44 @@ jobs:
           kubectl wait --for=condition=Ready pod -l app=order-db -n ${{ inputs.NAMESPACE }} --timeout=180s
 
       # -------------------------------
-      # Deploy Backend Services
+      # Deploy Services using YAML files
       # -------------------------------
-      - name: Deploy Backend Services
+      - name: Deploy Product Service
         run: |
-          TYPE=LoadBalancer
-          if [ "${{ inputs.STAGING }}" = "true" ]; then TYPE=ClusterIP; fi
+          kubectl apply -f k8s/product-service.yaml -n ${{ inputs.NAMESPACE }}
+          kubectl rollout status deployment/product-service -n ${{ inputs.NAMESPACE }} --timeout=300s
+          kubectl wait --for=condition=Ready pod -l app=product-service -n ${{ inputs.NAMESPACE }} --timeout=180s
 
-          # Product Service
-          kubectl create deployment product-service \
-            --image=$ACR_LOGIN_SERVER/product_service:${{ inputs.IMAGE_TAG }} \
-            -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl expose deployment product-service --type=$TYPE --port=8000 --target-port=8000 -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl label deployment product-service app=product-service -n ${{ inputs.NAMESPACE }} --overwrite
-          kubectl set image deployment/product-service *=$ACR_LOGIN_SERVER/product_service:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
-
-          # Order Service
-          kubectl create deployment order-service \
-            --image=$ACR_LOGIN_SERVER/order_service:${{ inputs.IMAGE_TAG }} \
-            -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl expose deployment order-service --type=$TYPE --port=8001 --target-port=8001 -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl label deployment order-service app=order-service -n ${{ inputs.NAMESPACE }} --overwrite
-          kubectl set image deployment/order-service *=$ACR_LOGIN_SERVER/order_service:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
-
-      - name: Wait for Backend Deployments
+      - name: Deploy Order Service
         run: |
-          for dep in $(kubectl get deployments -n ${{ inputs.NAMESPACE }} -o jsonpath='{.items[*].metadata.name}'); do
-            POD_LABEL=$(kubectl get deployment $dep -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.selector.matchLabels.app}')
-            kubectl rollout status deployment/$dep -n ${{ inputs.NAMESPACE }} --timeout=300s
-            kubectl wait --for=condition=Ready pod -l app=$POD_LABEL -n ${{ inputs.NAMESPACE }} --timeout=180s
-          done
+          kubectl apply -f k8s/order-service.yaml -n ${{ inputs.NAMESPACE }}
+          kubectl rollout status deployment/order-service -n ${{ inputs.NAMESPACE }} --timeout=300s
+          kubectl wait --for=condition=Ready pod -l app=order-service -n ${{ inputs.NAMESPACE }} --timeout=180s
 
-      # -------------------------------
-      # Deploy Frontend
-      # -------------------------------
       - name: Deploy Frontend
         run: |
-          docker build -t $ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} frontend/
-          echo ${{ secrets.ACR_PASSWORD }} | docker login $ACR_LOGIN_SERVER -u ${{ secrets.ACR_USERNAME }} --password-stdin
-          docker push $ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }}
-
-          TYPE=LoadBalancer
-          if [ "${{ inputs.STAGING }}" = "true" ]; then TYPE=ClusterIP; fi
-
-          kubectl create deployment frontend --image=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl expose deployment frontend --port=80 --target-port=80 --type=$TYPE -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl label deployment frontend app=frontend -n ${{ inputs.NAMESPACE }} --overwrite
-          kubectl set image deployment/frontend *=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
-
-      - name: Wait for Frontend Deployment
-        run: kubectl rollout status deployment/frontend -n ${{ inputs.NAMESPACE }} --timeout=300s
+          kubectl apply -f k8s/frontend.yaml -n ${{ inputs.NAMESPACE }}
+          kubectl rollout status deployment/frontend -n ${{ inputs.NAMESPACE }} --timeout=300s
+          kubectl wait --for=condition=Ready pod -l app=frontend -n ${{ inputs.NAMESPACE }} --timeout=180s
 
       - name: Log Service External IPs
         run: |
           echo "🌐 Checking service IPs in namespace ${{ inputs.NAMESPACE }}..."
-          for svc in frontend order-service product-service; do
-            TYPE=$(kubectl get svc $svc -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.type}')
+          kubectl get svc -n ${{ inputs.NAMESPACE }}
+
+          for svc in frontend product-service order-service; do
+            TYPE=$(kubectl get svc $svc -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.type}' 2>/dev/null || echo "NotFound")
             if [ "$TYPE" = "LoadBalancer" ]; then
-              EXTERNAL_IP=""
-              while [ -z "$EXTERNAL_IP" ]; do
-                EXTERNAL_IP=$(kubectl get svc $svc -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-                [ -z "$EXTERNAL_IP" ] && echo "Waiting for $svc external IP..." && sleep 5
-              done
+              echo "⏳ Waiting for $svc external IP..."
+              kubectl wait --for=jsonpath='{.status.loadBalancer.ingress}' svc/$svc -n ${{ inputs.NAMESPACE }} --timeout=300s
+              EXTERNAL_IP=$(kubectl get svc $svc -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
               echo "✅ $svc LoadBalancer IP: $EXTERNAL_IP"
             else
-              echo "ℹ️ $svc is ClusterIP only"
+              echo "ℹ️ $svc is $TYPE"
             fi
           done
 
+  # Rest of the jobs remain the same...
   post-deploy-integration-tests:
     needs: deploy
     runs-on: ubuntu-latest

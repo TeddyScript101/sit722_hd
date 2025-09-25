@@ -1,4 +1,4 @@
-# hd/k8s/configmaps.yaml
+# Fixed hd/k8s/configmaps.yaml
 
 apiVersion: v1
 kind: ConfigMap
@@ -11,5 +11,6 @@ data:
   AZURE_STORAGE_CONTAINER_NAME: product-images
   AZURE_SAS_TOKEN_EXPIRY_HOURS: "24"
 
-  PRODUCT_SERVICE_URL: http://product-service-hd:8000
-  ORDER_SERVICE_URL: http://order-service-hd:8001
+  # Fixed service URLs - remove the -hd suffix
+  PRODUCT_SERVICE_URL: http://product-service:8000
+  ORDER_SERVICE_URL: http://order-service:8001
