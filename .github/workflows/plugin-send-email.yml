@@ -52,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd util
-          npm ci   # assumes nodemailer is in package.json
+          npm ci
 
       - name: Send Email
         run: |
