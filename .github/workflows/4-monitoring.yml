@@ -5,7 +5,7 @@ on:
     workflows: ["Stage3 - Production Deployment"]
     types:
       - completed
-  workflow_dispatch: # <-- allows manual triggering
+  workflow_dispatch:
 
 jobs:
   deploy-monitoring:
@@ -33,6 +33,10 @@ jobs:
         run: |
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 
+      - name: Set kubectl namespace context
+        run: |
+          kubectl config set-context --current --namespace=monitoring
+
       - name: Deploy Prometheus
         run: |
           echo "📦 Deploying Prometheus..."
@@ -47,8 +51,8 @@ jobs:
 
       - name: Verify Monitoring Services
         run: |
-          kubectl get pods -n monitoring
-          kubectl get svc -n monitoring
+          kubectl get pods
+          kubectl get svc
 
       - name: Cleanup on Failure
         if: ${{ failure() }}
