@@ -3,7 +3,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: product-db-deployment-hd
+  name: product-db-deployment
   labels:
     app: product-db
 spec:
@@ -41,7 +41,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: product-db-service-hd # Internal DNS name for the Product DB
+  name: product-db
   labels:
     app: product-db
 spec:

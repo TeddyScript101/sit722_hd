@@ -1,3 +1,4 @@
+# Fixed version of plugin-deploy.yml
 name: Plugin - Deploy to AKS
 
 on:
@@ -22,15 +23,20 @@ on:
         required: true
       ACR_LOGIN_SERVER:
         required: true
+      EMAIL_USER:
+        required: true
+      EMAIL_PASSWORD:
+        required: true
+
+env:
+  RESOURCE_GROUP: sit722devopsteddy-rg
+  AKS_NAME: sit722devopsteddy-aks
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      RESOURCE_GROUP: sit722devopsteddy-rg
-      AKS_NAME: sit722devopsteddy-aks
       ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -46,79 +52,98 @@ jobs:
       - name: Create Namespace
         run: kubectl create namespace ${{ inputs.NAMESPACE }} || echo "Namespace exists"
 
-      - name: Deploy Backend Services
+      # -------------------------------
+      # Update image tags in YAML files
+      # -------------------------------
+      - name: Update Image Tags
         run: |
-          for service in order_service product_service; do
-            K8S_NAME=$(echo $service | sed 's/_/-/g')
-            kubectl create deployment $K8S_NAME \
-              --image=$ACR_LOGIN_SERVER/$service:${{ inputs.IMAGE_TAG }} \
-              -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-            # Use ClusterIP for testing, LoadBalancer for production
-            if [ "${{ inputs.STAGING }}" = "false" ]; then
-              TYPE=LoadBalancer
-            else
-              TYPE=ClusterIP
-            fi
-            kubectl expose deployment $K8S_NAME \
-              --type=$TYPE \
-              --port=80 --target-port=80 --name=$K8S_NAME \
-              -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-            kubectl label deployment $K8S_NAME app=$K8S_NAME -n ${{ inputs.NAMESPACE }} --overwrite
-            kubectl set image deployment/$K8S_NAME *=$ACR_LOGIN_SERVER/$service:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
-          done
+          # Update product service image
+          sed -i 's|image: teddysit722hd.azurecr.io/product_service:latest|image: ${{ secrets.ACR_LOGIN_SERVER }}/product_service:${{ inputs.IMAGE_TAG }}|g' k8s/product-service.yaml
 
-      - name: Wait for Backend Deployments
-        run: |
-          DEPLOYMENTS=$(kubectl get deployments -n ${{ inputs.NAMESPACE }} -o jsonpath='{.items[*].metadata.name}')
-          for dep in $DEPLOYMENTS; do
-            kubectl rollout status deployment/$dep -n ${{ inputs.NAMESPACE }} --timeout=300s
-            # Wait for pods to be ready
-            kubectl wait --for=condition=Ready pod -l app=$dep -n ${{ inputs.NAMESPACE }} --timeout=120s
-          done
+          # Update order service image  
+          sed -i 's|image: teddysit722hd.azurecr.io/order_service:latest|image: ${{ secrets.ACR_LOGIN_SERVER }}/order_service:${{ inputs.IMAGE_TAG }}|g' k8s/order-service.yaml
 
-      - name: Get Backend External IPs
-        run: |
-          PRODUCT_API_IP=$(kubectl get svc product-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-          ORDER_API_IP=$(kubectl get svc order-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-          echo "PRODUCT_API=$PRODUCT_API_IP" >> $GITHUB_ENV
-          echo "ORDER_API=$ORDER_API_IP" >> $GITHUB_ENV
+          # Update frontend image
+          sed -i 's|image: teddysit722hd.azurecr.io/frontend:latest|image: ${{ secrets.ACR_LOGIN_SERVER }}/frontend:${{ inputs.IMAGE_TAG }}|g' k8s/frontend.yaml
 
-      - name: Inject Backend IPs into Frontend main.js
+      # -------------------------------
+      # Update service types for staging
+      # -------------------------------
+      - name: Update Service Types for Staging
+        if: ${{ inputs.STAGING == true }}
         run: |
-          sed -i "s|_PRODUCT_API_URL_|http://$PRODUCT_API:80|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|http://$ORDER_API:80|g" frontend/main.js
+          # Change LoadBalancer to ClusterIP for staging
+          sed -i 's/type: LoadBalancer/type: ClusterIP/g' k8s/product-service.yaml
+          sed -i 's/type: LoadBalancer/type: ClusterIP/g' k8s/order-service.yaml  
+          sed -i 's/type: LoadBalancer/type: ClusterIP/g' k8s/frontend.yaml
 
-      - name: Build and Push Frontend Image
+      - name: Apply ConfigMaps
+        run: kubectl apply -f k8s/configmaps.yaml -n ${{ inputs.NAMESPACE }}
+
+      - name: Apply Secrets
+        run: kubectl apply -f k8s/secrets.yaml -n ${{ inputs.NAMESPACE }}
+
+      # -------------------------------
+      # Deploy Databases
+      # -------------------------------
+      - name: Deploy Product DB
         run: |
-          docker build -t $ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} frontend/
-          echo ${{ secrets.ACR_PASSWORD }} | docker login $ACR_LOGIN_SERVER -u ${{ secrets.ACR_USERNAME }} --password-stdin
-          docker push $ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }}
+          kubectl apply -f k8s/product-db.yaml -n ${{ inputs.NAMESPACE }}
+          kubectl rollout status deployment/product-db-deployment -n ${{ inputs.NAMESPACE }} --timeout=300s
+          kubectl wait --for=condition=Ready pod -l app=product-db -n ${{ inputs.NAMESPACE }} --timeout=180s
+
+      - name: Deploy Order DB
+        run: |
+          kubectl apply -f k8s/order-db.yaml -n ${{ inputs.NAMESPACE }}
+          kubectl rollout status deployment/order-db-deployment -n ${{ inputs.NAMESPACE }} --timeout=300s
+          kubectl wait --for=condition=Ready pod -l app=order-db -n ${{ inputs.NAMESPACE }} --timeout=180s
+
+      # -------------------------------
+      # Deploy Services using YAML files
+      # -------------------------------
+      - name: Deploy Product Service
+        run: |
+          kubectl apply -f k8s/product-service.yaml -n ${{ inputs.NAMESPACE }}
+          kubectl rollout status deployment/product-service -n ${{ inputs.NAMESPACE }} --timeout=300s
+          kubectl wait --for=condition=Ready pod -l app=product-service -n ${{ inputs.NAMESPACE }} --timeout=180s
+
+      - name: Deploy Order Service
+        run: |
+          kubectl apply -f k8s/order-service.yaml -n ${{ inputs.NAMESPACE }}
+          kubectl rollout status deployment/order-service -n ${{ inputs.NAMESPACE }} --timeout=300s
+          kubectl wait --for=condition=Ready pod -l app=order-service -n ${{ inputs.NAMESPACE }} --timeout=180s
 
       - name: Deploy Frontend
         run: |
-          kubectl create deployment frontend --image=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          TYPE=LoadBalancer
-          if [ "${{ inputs.STAGING }}" = "true" ]; then
-            TYPE=ClusterIP
-          fi
-          kubectl expose deployment frontend --port=80 --target-port=80 --name=frontend -n ${{ inputs.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl set image deployment/frontend *=$ACR_LOGIN_SERVER/frontend:${{ inputs.IMAGE_TAG }} -n ${{ inputs.NAMESPACE }}
-          kubectl label deployment frontend app=frontend -n ${{ inputs.NAMESPACE }} --overwrite
+          kubectl apply -f k8s/frontend.yaml -n ${{ inputs.NAMESPACE }}
+          kubectl rollout status deployment/frontend -n ${{ inputs.NAMESPACE }} --timeout=300s
+          kubectl wait --for=condition=Ready pod -l app=frontend -n ${{ inputs.NAMESPACE }} --timeout=180s
 
-      - name: Wait for Frontend Deployment
-        run: kubectl rollout status deployment/frontend -n ${{ inputs.NAMESPACE }} --timeout=300s
+      - name: Log Service External IPs
+        run: |
+          echo "🌐 Checking service IPs in namespace ${{ inputs.NAMESPACE }}..."
+          kubectl get svc -n ${{ inputs.NAMESPACE }}
 
+          for svc in frontend product-service order-service; do
+            TYPE=$(kubectl get svc $svc -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.type}' 2>/dev/null || echo "NotFound")
+            if [ "$TYPE" = "LoadBalancer" ]; then
+              echo "⏳ Waiting for $svc external IP..."
+              kubectl wait --for=jsonpath='{.status.loadBalancer.ingress}' svc/$svc -n ${{ inputs.NAMESPACE }} --timeout=300s
+              EXTERNAL_IP=$(kubectl get svc $svc -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+              echo "✅ $svc LoadBalancer IP: $EXTERNAL_IP"
+            else
+              echo "ℹ️ $svc is $TYPE"
+            fi
+          done
+
+  # Rest of the jobs remain the same...
   post-deploy-integration-tests:
     needs: deploy
     runs-on: ubuntu-latest
-    env:
-      RESOURCE_GROUP: sit722devopsteddy-rg
-      AKS_NAME: sit722devopsteddy-aks
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Add Azure login and AKS connection for this job
       - name: Azure Login
         uses: azure/login@v2
         with:
@@ -137,81 +162,96 @@ jobs:
           cd util
           npm ci
 
-      - name: Run API integration tests
+      - name: Wait for Services to be Ready
         run: |
-          echo "🔗 Setting up port forwarding for integration tests..."
+          NAMESPACE="${{ inputs.NAMESPACE }}"
+          for svc in product-service order-service frontend; do
+            echo "🔍 Waiting for pods of $svc to be ready..."
+            kubectl wait --for=condition=Ready pod -l app=$svc -n $NAMESPACE --timeout=180s
+          done
 
-          # Start port forwarding in background
-          for service in product-service order-service frontend; do
-            POD=$(kubectl get pod -n ${{ inputs.NAMESPACE }} -l app=$service -o jsonpath="{.items[0].metadata.name}")
-            if [ -z "$POD" ]; then
-              echo "❌ No pod found for service $service"
-              continue
-            fi
-            
-            PORT=""
-            LOCAL_PORT=""
-            case $service in
-              product-service) LOCAL_PORT=8000; PORT=80 ;;
-              order-service) LOCAL_PORT=8001; PORT=80 ;;
-              frontend) LOCAL_PORT=8080; PORT=80 ;;
-            esac
-            
-            echo "🚀 Starting port-forward for $service: $POD on $LOCAL_PORT:$PORT"
-            kubectl port-forward pod/$POD $LOCAL_PORT:$PORT -n ${{ inputs.NAMESPACE }} &
-            
-            # Store the PID for cleanup
+      - name: Setup Port Forwarding
+        run: |
+          NAMESPACE="${{ inputs.NAMESPACE }}"
+
+          setup_port_forward() {
+            local service=$1
+            local local_port=$2
+            TARGET_PORT=$(kubectl get svc $service -n $NAMESPACE -o jsonpath='{.spec.ports[0].targetPort}')
+            echo "🚀 Setting up port forward for $service: localhost:$local_port -> service:$TARGET_PORT"
+            pkill -f "port-forward.*:$local_port" || true
+            kubectl port-forward svc/$service $local_port:$TARGET_PORT -n $NAMESPACE &
             PID=$!
-            echo "PORT_FORWARD_PID_$service=$PID" >> $GITHUB_ENV
-          done
-
-          # Wait for port-forwards to establish
-          echo "⏳ Waiting for port-forwards to establish..."
-          sleep 20
-
-          # Verify connections
-          echo "🔍 Verifying port-forward connections..."
-          for port in 8000 8001 8080; do
-            if nc -z localhost $port 2>/dev/null; then
-              echo "✅ Port $port is accessible"
+            sleep 3
+            if kill -0 $PID 2>/dev/null; then
+              echo "✅ Port forward established for $service (PID: $PID)"
+              echo "🔗 Access $service at http://localhost:$local_port"
             else
-              echo "❌ Port $port is not accessible"
+              echo "❌ Port forward for $service failed"
+              return 1
             fi
-          done
+          }
 
-          # Set environment variables for tests
-          export PRODUCT_API_IP="http://localhost:8000"
-          export ORDER_API_IP="http://localhost:8001"
-          export FRONTEND_URL="http://localhost:8080"
+          setup_port_forward "product-service" 18000
+          setup_port_forward "order-service" 18001
+          setup_port_forward "frontend" 18002
+          echo "⏳ Waiting 10 seconds for port forwards to stabilize..."
+          sleep 10
 
-          echo "🧪 Running integration tests..."
-          cd util
-          npm test --testTimeout=30000 || true
-
-      - name: Cleanup
-        if: ${{ always() }}
+      - name: Test Service Connectivity
         run: |
-          # Only clean up if not production, or if previous steps failed
-          if [[ "${{ inputs.STAGING }}" == "true" || "${{ job.status }}" == "failure" ]]; then
-            echo "🧹 Cleaning up port-forwards..."
-            pkill -f "kubectl port-forward" || true
+          test_endpoint() {
+            local name=$1
+            local url=$2
+            local expected_status=${3:-200}
+            echo "Testing $name at $url"
+            for i in {1..10}; do
+              if curl -f -s --max-time 5 "$url" >/dev/null 2>&1; then
+                echo "✅ $name is responding"
+                return 0
+              else
+                echo "⏳ Attempt $i/10: $name not ready, retrying in 2s..."
+                sleep 2
+              fi
+            done
+            echo "❌ $name failed to respond after 10 attempts"
+            return 1
+          }
 
-            echo "🗑️ Deleting namespace..."
-            kubectl delete namespace ${{ inputs.NAMESPACE }} || echo "Namespace already deleted"
-          else
-            echo "✅ Skipping cleanup for production success."
-          fi
+          test_endpoint "Product Service Health" "http://localhost:18000/health"
+          test_endpoint "Order Service Health" "http://localhost:18001/health"
+          test_endpoint "Frontend" "http://localhost:18002/" 200
+
+      - name: Export Service URLs and Run Tests
+        run: |
+          export PRODUCT_API_IP="http://localhost:18000"
+          export ORDER_API_IP="http://localhost:18001"
+          export FRONTEND_URL="http://localhost:18002"
+
+          echo "🔗 Final service URLs:"
+          echo "Product API: $PRODUCT_API_IP"
+          echo "Order API: $ORDER_API_IP"
+          echo "Frontend: $FRONTEND_URL"
+
+          cd util
+          npm test --testTimeout=30000
+
+      - name: Cleanup Port Forwards
+        if: always()
+        run: |
+          echo "🧹 Cleaning up port forwards..."
+          pkill -f "kubectl port-forward" || true
 
   notify-email:
     needs: post-deploy-integration-tests
     uses: ./.github/workflows/plugin-send-email.yml
     with:
-      email_to: "teddyhinyp@gmail.com"
-      email_subject: ${{ needs.deploy.result == 'success' && 'Production Deployment Succeeded' || 'Production Deployment Failed' }}
+      email_to: "teddyhiny@gmail.com"
+      email_subject: ${{ needs.deploy.result == 'success' && 'Deployment Succeeded' || 'Deployment Failed' }}
       email_body: |
-        Deployment to namespace ${{ github.event.inputs.NAMESPACE }} has completed.
+        Deployment to namespace ${{ inputs.NAMESPACE }} has completed.
         Status: ${{ needs.deploy.result }}
-        Image Tag: ${{ github.event.inputs.IMAGE_TAG }}
+        Image Tag: ${{ inputs.IMAGE_TAG }}
         Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     secrets:
       EMAIL_USER: ${{ secrets.EMAIL_USER }}
