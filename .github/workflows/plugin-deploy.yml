@@ -123,8 +123,9 @@ jobs:
           echo "Product API: $PRODUCT_API_IP"
           echo "Order API: $ORDER_API_IP"
 
-          sed -i "s|_PRODUCT_API_URL_|$PRODUCT_API_IP|g" $FRONTEND_FILE
-          sed -i "s|_ORDER_API_URL_|$ORDER_API_IP|g" $FRONTEND_FILE
+          # Replace placeholders safely
+          sed -i "s|_PRODUCT_API_URL_|${PRODUCT_API_IP}|g" "$FRONTEND_FILE"
+          sed -i "s|_ORDER_API_URL_|${ORDER_API_IP}|g" "$FRONTEND_FILE"
 
       - name: Deploy Frontend
         run: |
