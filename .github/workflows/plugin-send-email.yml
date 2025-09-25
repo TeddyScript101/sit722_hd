@@ -52,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd util
-          npm install nodemailer
+          npm ci
 
       - name: Send Email
         run: |
@@ -61,6 +61,6 @@ jobs:
         env:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-          EMAIL_TO: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.email_to || inputs.email_to }}
-          EMAIL_SUBJECT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.email_subject || inputs.email_subject }}
-          EMAIL_BODY: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.email_body || inputs.email_body }}
+          EMAIL_TO: ${{ inputs.email_to || github.event.inputs.email_to }}
+          EMAIL_SUBJECT: ${{ inputs.email_subject || github.event.inputs.email_subject }}
+          EMAIL_BODY: ${{ inputs.email_body || github.event.inputs.email_body }}

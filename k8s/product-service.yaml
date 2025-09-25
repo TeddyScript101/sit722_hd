@@ -3,7 +3,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: product-service-hd
+  name: product-service
   labels:
     app: product-service
 spec:
@@ -22,10 +22,24 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
+              name: http
+          # Add health checks
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
           env:
             # Database connection details
             - name: POSTGRES_HOST
-              value: product-db-service-hd
+              value: product-db
             - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
@@ -34,38 +48,38 @@ spec:
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: ecomm-secrets-hd # Secret name matches
+                  name: ecomm-secrets-hd
                   key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: ecomm-secrets-hd # Secret name matches
+                  name: ecomm-secrets-hd
                   key: POSTGRES_PASSWORD
             - name: AZURE_STORAGE_ACCOUNT_NAME
               valueFrom:
                 secretKeyRef:
-                  name: ecomm-secrets-hd # Secret name matches
+                  name: ecomm-secrets-hd
                   key: AZURE_STORAGE_ACCOUNT_NAME
             - name: AZURE_STORAGE_ACCOUNT_KEY
               valueFrom:
                 secretKeyRef:
-                  name: ecomm-secrets-hd # Secret name matches
+                  name: ecomm-secrets-hd
                   key: AZURE_STORAGE_ACCOUNT_KEY
             - name: AZURE_STORAGE_CONTAINER_NAME
               valueFrom:
                 configMapKeyRef:
-                  name: ecomm-config-hd # ConfigMap name matches
+                  name: ecomm-config-hd
                   key: AZURE_STORAGE_CONTAINER_NAME
             - name: AZURE_SAS_TOKEN_EXPIRY_HOURS
               valueFrom:
                 configMapKeyRef:
-                  name: ecomm-config-hd # ConfigMap name matches
+                  name: ecomm-config-hd
                   key: AZURE_SAS_TOKEN_EXPIRY_HOURS
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: product-service-hd
+  name: product-service
   labels:
     app: product-service
 spec:
@@ -73,6 +87,7 @@ spec:
     app: product-service
   ports:
     - protocol: TCP
-      port: 8000
-      targetPort: 8000
+      port: 8000 # External port matching integration test expectations
+      targetPort: 8000 # Container port
+      name: http
   type: LoadBalancer
