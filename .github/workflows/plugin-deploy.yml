@@ -113,11 +113,39 @@ jobs:
           kubectl rollout status deployment/order-service -n ${{ inputs.NAMESPACE }} --timeout=300s
           kubectl wait --for=condition=Ready pod -l app=order-service -n ${{ inputs.NAMESPACE }} --timeout=180s
 
+      # -------------------------------
+      # Wait for LoadBalancer services to get external IPs (if not staging)
+      # -------------------------------
+      - name: Wait for External IPs
+        if: ${{ inputs.STAGING == false }}
+        run: |
+          echo "🌐 Waiting for LoadBalancer services to get external IPs..."
+
+          for svc in product-service order-service; do
+            echo "⏳ Waiting for $svc external IP..."
+            kubectl wait --for=jsonpath='{.status.loadBalancer.ingress}' svc/$svc -n ${{ inputs.NAMESPACE }} --timeout=300s
+            EXTERNAL_IP=$(kubectl get svc $svc -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            echo "✅ $svc LoadBalancer IP: $EXTERNAL_IP"
+          done
+
+      # -------------------------------
+      # Inject Service URLs into Frontend (MOVED AFTER SERVICES ARE DEPLOYED)
+      # -------------------------------
       - name: Inject Service URLs into Frontend
         run: |
           FRONTEND_FILE=frontend/main.js
-          PRODUCT_API_IP="http://$(kubectl get svc product-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.clusterIP}'):80"
-          ORDER_API_IP="http://$(kubectl get svc order-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.clusterIP}'):80"
+
+          if [ "${{ inputs.STAGING }}" = "true" ]; then
+            # For staging, use ClusterIP
+            PRODUCT_API_IP="http://$(kubectl get svc product-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.clusterIP}'):8000"
+            ORDER_API_IP="http://$(kubectl get svc order-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.clusterIP}'):8000"
+          else
+            # For production, use LoadBalancer external IP
+            PRODUCT_EXTERNAL_IP=$(kubectl get svc product-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            ORDER_EXTERNAL_IP=$(kubectl get svc order-service -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+            PRODUCT_API_IP="http://${PRODUCT_EXTERNAL_IP}:8000"
+            ORDER_API_IP="http://${ORDER_EXTERNAL_IP}:8000"
+          fi
 
           echo "Injecting URLs into frontend:"
           echo "Product API: $PRODUCT_API_IP"
@@ -126,6 +154,10 @@ jobs:
           # Replace placeholders safely
           sed -i "s|_PRODUCT_API_URL_|${PRODUCT_API_IP}|g" "$FRONTEND_FILE"
           sed -i "s|_ORDER_API_URL_|${ORDER_API_IP}|g" "$FRONTEND_FILE"
+
+          # Verify the replacement worked
+          echo "Verifying URL injection:"
+          grep -n "http://" "$FRONTEND_FILE" || echo "No HTTP URLs found in frontend file"
 
       - name: Deploy Frontend
         run: |
@@ -141,8 +173,6 @@ jobs:
           for svc in frontend product-service order-service; do
             TYPE=$(kubectl get svc $svc -n ${{ inputs.NAMESPACE }} -o jsonpath='{.spec.type}' 2>/dev/null || echo "NotFound")
             if [ "$TYPE" = "LoadBalancer" ]; then
-              echo "⏳ Waiting for $svc external IP..."
-              kubectl wait --for=jsonpath='{.status.loadBalancer.ingress}' svc/$svc -n ${{ inputs.NAMESPACE }} --timeout=300s
               EXTERNAL_IP=$(kubectl get svc $svc -n ${{ inputs.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
               echo "✅ $svc LoadBalancer IP: $EXTERNAL_IP"
             else
