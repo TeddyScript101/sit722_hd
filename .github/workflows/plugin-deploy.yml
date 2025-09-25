@@ -170,7 +170,7 @@ jobs:
 
       - name: Deploy Frontend
         run: |
-          sed -i "s|image: teddysit722hd.azurecr.io/frontend:latest|image: teddysit722hd.azurecr.io/frontend:${{ inputs.IMAGE_TAG }}|g" k8s/frontend.yaml
+          sed -i "s|image: sit722devopsteddyacr.azurecr.io/frontend:latest|image: sit722devopsteddyacr.azurecr.io/frontend:${{ inputs.IMAGE_TAG }}|g" k8s/frontend.yaml
           kubectl apply -f k8s/frontend.yaml -n ${{ inputs.NAMESPACE }}
           kubectl rollout status deployment/frontend -n ${{ inputs.NAMESPACE }} --timeout=300s
           kubectl wait --for=condition=Ready pod -l app=frontend -n ${{ inputs.NAMESPACE }} --timeout=180s
