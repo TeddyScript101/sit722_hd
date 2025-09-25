@@ -3,7 +3,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: order-db-deployment-hd # Deployment name matches
+  name: order-db-deployment # Deployment name matches
   labels:
     app: order-db
 spec:
