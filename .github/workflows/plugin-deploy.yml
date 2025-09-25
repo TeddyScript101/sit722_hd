@@ -159,8 +159,18 @@ jobs:
           echo "Verifying URL injection:"
           grep -n "http://" "$FRONTEND_FILE" || echo "No HTTP URLs found in frontend file"
 
+      - name: Login to ACR
+        run: |
+          echo ${{ secrets.ACR_PASSWORD }} | docker login -u ${{ secrets.ACR_USERNAME }} --password-stdin ${{ secrets.ACR_LOGIN_SERVER }}
+
+      - name: Build and push frontend image
+        run: |
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/frontend:${{ inputs.IMAGE_TAG }} frontend
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/frontend:${{ inputs.IMAGE_TAG }}
+
       - name: Deploy Frontend
         run: |
+          sed -i "s|image: teddysit722hd.azurecr.io/frontend:latest|image: teddysit722hd.azurecr.io/frontend:${{ inputs.IMAGE_TAG }}|g" k8s/frontend.yaml
           kubectl apply -f k8s/frontend.yaml -n ${{ inputs.NAMESPACE }}
           kubectl rollout status deployment/frontend -n ${{ inputs.NAMESPACE }} --timeout=300s
           kubectl wait --for=condition=Ready pod -l app=frontend -n ${{ inputs.NAMESPACE }} --timeout=180s

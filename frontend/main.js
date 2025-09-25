@@ -1,5 +1,3 @@
-// hd/frontend/main.js
-
 document.addEventListener('DOMContentLoaded', () => {
     // Use placeholder replacement approach - CI/CD will replace these placeholders
     let PRODUCT_API_BASE_URL = '_PRODUCT_API_URL_';
