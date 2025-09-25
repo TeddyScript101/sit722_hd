@@ -1,9 +1,7 @@
-# hd/k8s/order-service.yaml - Consistent naming without -hd suffix
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: order-service # Removed -hd suffix
+  name: order-service
   labels:
     app: order-service
 spec:
@@ -21,10 +19,10 @@ spec:
           image: teddysit722hd.azurecr.io/order_service:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 8001 # Make sure this matches your service port expectations
+            - containerPort: 8000
           env:
             - name: POSTGRES_HOST
-              value: order-db-service-hd # Keep -hd for database services
+              value: order-db-service-hd
             - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
@@ -49,7 +47,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: order-service # Removed -hd suffix
+  name: order-service
   labels:
     app: order-service
 spec:
@@ -57,6 +55,6 @@ spec:
     app: order-service
   ports:
     - protocol: TCP
-      port: 8001
-      targetPort: 8001
+      port: 8000 # Service port should match container port
+      targetPort: 8000 # Target port matches container port
   type: LoadBalancer
