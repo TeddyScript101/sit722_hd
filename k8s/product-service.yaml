@@ -39,7 +39,7 @@ spec:
           env:
             # Database connection details
             - name: POSTGRES_HOST
-              value: product-db-service-hd
+              value: product-db
             - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
